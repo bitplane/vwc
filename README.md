@@ -6,7 +6,7 @@ Like `wc`, but with a live preview output to stderr if it's a tty.
 
 ```bash
 $ pip install vwc
-$ echo "hey" | wc -l
+$ echo "hey" | vwc -l
 1
 ```
 
@@ -14,7 +14,6 @@ $ echo "hey" | wc -l
 
  [ ] Integration tests
  [ ] Detect platform and mirror it
- [ ] Compile with Cython if available
 
 ## ⚖️ License
 

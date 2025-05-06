@@ -1,7 +1,7 @@
 [project]
 name = "vwc"
 description = "wc with a preview"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
     { name = "Random Hacker", email = "no@dev.null" }
 ]
@@ -25,7 +25,7 @@ dev = [
 ]
 
 [project.scripts]
-vwc = "vwc:cli.main"
+vwc = "vwc:main.main"
 
 [build-system]
 build-backend = "flit_core.buildapi"
