@@ -12,7 +12,6 @@ $ echo "hey" | wc -l
 
 ## ✅ To Do
 
- [x] Release something
  [ ] Integration tests
  [ ] Detect platform and mirror it
  [ ] Compile with Cython if available
