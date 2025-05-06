@@ -26,6 +26,7 @@ def is_tty():
 
 def run_wc(argv):
     """Main function to run the wc command."""
+    # Import here to avoid circular imports
     from .cli import parse_args, HELP_TEXT
 
     args = parse_args(argv)

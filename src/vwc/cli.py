@@ -5,7 +5,6 @@ Command-line interface for vwc.
 import argparse
 import signal
 import sys
-from .app import run_wc
 from .format import write
 
 
@@ -58,6 +57,9 @@ def parse_args(argv):
 
 def main():
     """Main entry point for the command-line interface."""
+    # Import here to avoid circular imports
+    from .app import run_wc
+
     # Handle broken pipe gracefully
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
