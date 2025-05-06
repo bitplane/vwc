@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-vwc = "vwc:vwc.main"
+vwc = "vwc:cli.main"
 
 [build-system]
 build-backend = "flit_core.buildapi"
