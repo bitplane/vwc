@@ -45,14 +45,17 @@ class BusyBox(WC):
 
     def print_line(self, counts, filename, file=sys.stdout):
         """Format and print count line for a file with BusyBox formatting."""
-        # BusyBox format: 9-character fields right-justified
-        output = ""
-        for count in counts:
-            if count is not None:
-                output += f"{count:9d} "
+        if len(counts) == 1:
+            # When only one count is printed, no padding
+            output = f"{counts[0]}"
+            if filename:
+                output += f" {filename}"
+        else:
+            # BusyBox format: 9-character fields right-justified with a space between fields
+            output = " ".join(f"{count:9d}" for count in counts)
 
-        # Add filename if not empty
-        if filename:
-            output += filename
+            # Add filename if not empty
+            if filename:
+                output += f" {filename}"
 
         print(output, file=file)

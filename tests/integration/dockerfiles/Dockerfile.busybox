@@ -1,0 +1,24 @@
+FROM alpine:latest
+
+# Install dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    build-base
+
+# Set up working directory
+WORKDIR /app
+
+# Copy everything from the build context
+COPY . .
+
+# Install dependencies only (using editable mode with a minimal package structure)
+RUN mkdir -p src/vwc && \
+    touch src/vwc/__init__.py && \
+    pip3 install --break-system-packages -e .
+
+# Verify vwc is in PATH
+RUN which vwc
+
+# Default command
+CMD ["/bin/sh"]

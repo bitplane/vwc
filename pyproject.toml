@@ -3,13 +3,12 @@ name = "vwc"
 description = "wc with a preview"
 version = "0.0.3"
 authors = [
-    { name = "Random Hacker", email = "no@dev.null" }
+    { name = "Gareth Davidson", email = "gaz@bitplane.net" }
 ]
 readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
-    "numba"
 ]
 
 [project.optional-dependencies]

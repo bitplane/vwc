@@ -1,149 +1,184 @@
-# tests/test_wc.py
+# Note to LLMs:
+#   Don't mess with this file unless explicitly asked to change it, and if you do,
+#   do it very carefully. We spent too much time arguing about it.
 import os
-import pytest
 import subprocess
 from pathlib import Path
-import docker
-import shutil
-import tempfile
 
-# Define test platforms
-PLATFORMS = {"gnu": "ubuntu:latest", "busybox": "alpine:latest", "bsd": "madworx/netbsd:latest"}
+import pytest
 
 
-# Test case discovery
+# Get test scripts
 def get_test_scripts():
     """Get all test scripts from the test_scripts directory"""
     test_dir = Path(__file__).parent / "test_scripts"
     return [f for f in test_dir.glob("*.sh")]
 
 
-# Container management
-@pytest.fixture(scope="module")
-def container_factory():
-    """Create and manage containers"""
-    client = docker.from_env()
-    containers = {}
-
-    def get_container(platform):
-        if platform not in containers:
-            containers[platform] = client.containers.run(PLATFORMS[platform], command="sleep infinity", detach=True)
-            # Setup working directory
-            containers[platform].exec_run("mkdir -p /tmp/test")
-        return containers[platform]
-
-    yield get_container
-
-    # Cleanup
-    for platform, container in containers.items():
-        container.stop()
-        container.remove()
+# Get available platforms based on Dockerfiles
+def get_platforms():
+    """Get all platforms based on available Dockerfiles"""
+    dockerfile_dir = Path(__file__).parent / "dockerfiles"
+    return [f.name.split(".", 1)[1] for f in dockerfile_dir.glob("Dockerfile.*")]
 
 
-# Run with our implementation
-def run_local(script_path):
-    """Run test locally with our vwc implementation"""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Copy script to temp dir
-        temp_script = Path(temp_dir) / script_path.name
-        shutil.copy2(script_path, temp_script)
-        os.chmod(temp_script, 0o755)
+# Prepare build directory
+def prepare_build_dir():
+    """Prepare build directory by copying required files"""
+    script_path = Path(__file__).parent / "build.sh"
 
-        # Replace wc with vwc in the script
-        script_content = temp_script.read_text()
-        vwc_cmd = shutil.which("vwc") or "python -m vwc.main"
-        modified_content = script_content.replace("wc ", f"{vwc_cmd} ")
-        temp_script.write_text(modified_content)
+    # Make sure build script is executable
+    os.chmod(script_path, 0o755)
 
-        # Run the script
-        result = subprocess.run(f"bash {temp_script}", shell=True, capture_output=True, cwd=temp_dir)
-
-        return {
-            "stdout": result.stdout.decode("utf-8"),
-            "stderr": result.stderr.decode("utf-8"),
-            "exit_code": result.returncode,
-        }
+    # Run the build script
+    subprocess.run([str(script_path)], check=True)
 
 
-# Run in container
-def run_in_container(container, script_path):
-    """Run test in container with reference implementation"""
-    # Copy script to container
-    script_content = script_path.read_text()
-    temp_script = f"/tmp/test/{script_path.name}"
+# Build Docker image for a platform - only once per session
+@pytest.fixture(scope="session")
+def docker_image_factory(request):
+    """Build Docker images for platforms (only once per session)"""
+    # Prepare build directory
+    prepare_build_dir()
 
-    container.exec_run(f"bash -c 'cat > {temp_script}'", stdin=script_content.encode())
-    container.exec_run(f"chmod +x {temp_script}")
+    built_images = {}
 
-    # Run the script
-    exit_code, output = container.exec_run(f"bash {temp_script}", demux=True)
+    def _get_image(platform):
+        if platform in built_images:
+            return built_images[platform]
 
-    return {
-        "stdout": output[0].decode("utf-8") if output[0] else "",
-        "stderr": output[1].decode("utf-8") if output[1] else "",
-        "exit_code": exit_code,
-    }
+        # Use the build directory as context
+        build_dir = Path(__file__).parent / "build"
+        dockerfile_path = Path(__file__).parent / "dockerfiles" / f"Dockerfile.{platform}"
+
+        # Build the image
+        image_name = f"vwc-test-{platform}"
+
+        result = subprocess.run(
+            ["docker", "build", "-t", image_name, "-f", str(dockerfile_path), str(build_dir)],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"Docker build failed: {result.stderr}")
+
+        built_images[platform] = image_name
+        return image_name
+
+    # Cleanup after tests
+    def _cleanup():
+        for image_name in built_images.values():
+            try:
+                subprocess.run(["docker", "rmi", image_name], check=False)
+            except Exception:
+                pass
+
+    request.addfinalizer(_cleanup)
+    return _get_image
 
 
-# Compare results
-def compare_results(vwc_result, ref_result):
-    """Compare vwc and reference results"""
+# Run a test with either original wc or vwc
+def run_test(image_name, script_path, use_vwc=False):
+    """Run a test script in the container with either original wc or vwc"""
+    # Create an output directory
+    output_dir = Path(f"/tmp/vwc-test-{os.getpid()}/{script_path.stem}/{use_vwc}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Get project source
+    project_root = Path(__file__).parent.parent.parent
+
+    # Use the run_test.sh script
+    runner_script = Path(__file__).parent / "run_test.sh"
+
+    # Run the container
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            # Mount the source directory
+            "-v",
+            f"{project_root}:/app:ro",
+            # Mount test script and runner
+            "-v",
+            f"{script_path.absolute()}:/test_script.sh:ro",
+            "-v",
+            f"{runner_script.absolute()}:/run_test.sh:ro",
+            # Mount output directory
+            "-v",
+            f"{output_dir}:/output",
+            image_name,
+            "/run_test.sh",
+            "/test_script.sh",
+            "/output",
+            "vwc" if use_vwc else "wc",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    return output_dir
+
+
+def assert_identical(wc_dir, vwc_dir):
+    """Compare all files in the output directories"""
     differences = []
 
-    # Compare stdout
-    if vwc_result["stdout"] != ref_result["stdout"]:
-        differences.append(("stdout", vwc_result["stdout"], ref_result["stdout"]))
+    # Get all files in both directories
+    all_files = set()
+    for file_path in wc_dir.glob("*"):
+        all_files.add(file_path.name)
+    for file_path in vwc_dir.glob("*"):
+        all_files.add(file_path.name)
 
-    # Compare stderr
-    if vwc_result["stderr"] != ref_result["stderr"]:
-        differences.append(("stderr", vwc_result["stderr"], ref_result["stderr"]))
+    if not all_files:
+        raise ValueError("No files found in either output directory")
 
-    # Compare exit code
-    if vwc_result["exit_code"] != ref_result["exit_code"]:
-        differences.append(("exit_code", vwc_result["exit_code"], ref_result["exit_code"]))
+    # Compare each file
+    for filename in all_files:
+        wc_file = wc_dir / filename
+        vwc_file = vwc_dir / filename
 
-    return differences
+        # Handle missing files
+        if not wc_file.exists():
+            differences.append((filename, "", "Extra file found"))
+            continue
+        if not vwc_file.exists():
+            differences.append((filename, "", "File is missing"))
+            continue
+
+        # Compare file contents
+        with open(wc_file, "r") as f:
+            wc_content = f.read()
+        with open(vwc_file, "r") as f:
+            vwc_content = f.read()
+
+        assert wc_content == vwc_content, f"Differences in {filename}"
 
 
-# Dynamically generate test functions
+# Generate test parameters
 def pytest_generate_tests(metafunc):
     """Generate test functions for each test script and platform"""
-    if "test_script" in metafunc.fixturenames and "platform" in metafunc.fixturenames:
-        test_scripts = get_test_scripts()
-        platforms = list(PLATFORMS.keys())
+    if "script" in metafunc.fixturenames and "platform" in metafunc.fixturenames:
+        scripts = get_test_scripts()
+        platforms = get_platforms()
 
-        # Skip slow platforms if TEST_FAST is set
-        if os.environ.get("TEST_FAST"):
-            platforms = [p for p in platforms if p != "bsd"]
-
-        metafunc.parametrize("test_script", test_scripts, ids=[t.stem for t in test_scripts])
+        metafunc.parametrize("script", scripts, ids=[s.stem for s in scripts])
         metafunc.parametrize("platform", platforms)
 
 
-# The actual test function
-def test_vwc_against_platform(test_script, platform, container_factory):
-    """Test vwc against reference platform"""
-    # Skip tests if needed
-    if platform == "bsd" and os.environ.get("TEST_FAST"):
-        pytest.skip("Skipping slow BSD tests")
+# Test function
+def test_vwc_integration(script, platform, docker_image_factory):
+    """Test that vwc behaves identically to the platform's native wc"""
+    # Get the Docker image for this platform
+    image_name = docker_image_factory(platform)
 
-    # Get container
-    container = container_factory(platform)
+    # Run with original wc
+    wc_output_dir = run_test(image_name, script, use_vwc=False)
 
     # Run with vwc
-    vwc_result = run_local(test_script)
+    vwc_output_dir = run_test(image_name, script, use_vwc=True)
 
-    # Run with reference
-    ref_result = run_in_container(container, test_script)
-
-    # Compare results
-    differences = compare_results(vwc_result, ref_result)
-
-    # Report differences
-    for diff_type, vwc_output, ref_output in differences:
-        print(f"\n{diff_type} mismatch for {test_script.stem} on {platform}:")
-        print(f"vwc output: {repr(vwc_output)}")
-        print(f"{platform} output: {repr(ref_output)}")
-
-    # Fail if differences found
-    assert not differences, f"Output mismatch for {test_script.stem} on {platform}"
+    # Compare all output files
+    assert_identical(wc_output_dir, vwc_output_dir)
