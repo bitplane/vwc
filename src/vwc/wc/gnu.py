@@ -1,5 +1,7 @@
 # src/vwc/wc/gnu.py
 import argparse
+import os
+import stat
 import sys
 
 from .wc import WC
@@ -42,32 +44,31 @@ class GNU(WC):
         parser.add_argument("--lines", action="store_true", dest="lines", help=argparse.SUPPRESS)
         parser.add_argument("--words", action="store_true", dest="words", help=argparse.SUPPRESS)
 
-    def get_files(self, args):
-        """Handle file processing with GNU-specific behavior."""
-        # Handle --files0-from option
+    def get_file_names(self, args):
+        """Return list of file names from --files0-from or args.files."""
         if getattr(args, "files0_from", None):
             try:
                 source = sys.stdin if args.files0_from == "-" else open(args.files0_from, "r")
                 filenames = source.read().split("\0")
-                if source != sys.stdin:
+                if source is not sys.stdin:
                     source.close()
-
-                for filename in filter(None, filenames):
-                    try:
-                        yield (filename, open(filename, "rb"))
-                    except OSError as e:
-                        self.handle_error(e, filename)
-                return
+                return list(filter(None, filenames))
             except Exception as e:
                 self.handle_error(e, args.files0_from)
-                return
+                return []
+        return args.files or ["-"]
 
-        # Handle regular file arguments or stdin
-        if not args.files:
+    def get_files(self, args):
+        """Handle file processing with GNU-specific behavior."""
+
+        files = self.get_file_names(args)
+        self.set_column_width(files)
+
+        if not files:
             yield ("", sys.stdin.buffer)
             return
 
-        for filename in args.files:
+        for filename in files:
             try:
                 if filename == "-":
                     yield (filename, sys.stdin.buffer)
@@ -75,6 +76,33 @@ class GNU(WC):
                     yield (filename, open(filename, "rb"))
             except OSError as e:
                 self.handle_error(e, filename)
+
+    def set_column_width(self, filenames):
+        """Do the same as compute_number_width in GNU's wc.c"""
+
+        if not filenames:
+            self.column_width = 7
+            return
+        else:
+            self.column_width = 1
+
+        for name in filenames:
+            try:
+                if name == "-" or not name:
+                    self.column_width = 7
+                    break
+                else:
+                    st = os.stat(name, follow_symlinks=False)
+
+                if not stat.S_ISREG(st.st_mode):
+                    self.column_width = 7
+                    break
+                else:
+                    new_width = len(str(st.st_size))
+                    self.column_width = max(self.column_width, new_width)
+            except Exception:
+                # Ignore errors
+                pass
 
     def print_totals(self, counts):
         """Print total counts."""
@@ -88,16 +116,13 @@ class GNU(WC):
             self.print_line(counts, "total")
 
     def print_line(self, counts, filename, file=sys.stdout):
-        """Format output with GNU-specific formatting."""
-        # Handle single count with no leading space (GNU extension)
+        """GNU-specific line printing using width ."""
         if len(counts) == 1:
             output = f"{counts[0]}"
             if filename:
                 output += f" {filename}"
         else:
-            # Standard formatting for multiple counts
-            output = " ".join(f"{count:7d}" for count in counts)
+            output = " ".join(f"{count:{self.column_width}d}" for count in counts)
             if filename:
                 output += f" {filename}"
-
         print(output, file=file)
