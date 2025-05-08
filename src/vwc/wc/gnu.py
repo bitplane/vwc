@@ -41,7 +41,6 @@ class GNU(WC):
         parser.add_argument("--lines", action="store_true", dest="lines", help=argparse.SUPPRESS)
         parser.add_argument("--words", action="store_true", dest="words", help=argparse.SUPPRESS)
 
-    # In GNU.get_files
     def get_files(self, args):
         """
         GNU-specific file handling - handles '-' as stdin and --files0-from option.
