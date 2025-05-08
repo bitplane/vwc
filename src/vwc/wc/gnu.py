@@ -80,7 +80,7 @@ class GNU(WC):
         # Process each file argument
         for filename in args.files:
             if filename == "-":
-                files.append(("", sys.stdin.buffer))  # Empty name for stdin
+                files.append(("-", sys.stdin.buffer))  # Explicitly added stdin
             else:
                 try:
                     # Open in binary mode to handle all types of files
