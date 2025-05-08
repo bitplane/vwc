@@ -1,6 +1,7 @@
 # src/vwc/wc/gnu.py
 import argparse
 import sys
+
 from .wc import WC
 
 
@@ -42,70 +43,55 @@ class GNU(WC):
         parser.add_argument("--words", action="store_true", dest="words", help=argparse.SUPPRESS)
 
     def get_files(self, args):
-        """
-        GNU-specific file handling - handles '-' as stdin and --files0-from option.
-        """
-        # Handle --files0-from option if specified
-        if hasattr(args, "files0_from") and args.files0_from:
+        """Handle file processing with GNU-specific behavior."""
+        # Handle --files0-from option
+        if getattr(args, "files0_from", None):
             try:
-                # Open file with NUL-terminated filenames
-                if args.files0_from == "-":
-                    filenames = sys.stdin.read().split("\0")
-                else:
-                    with open(args.files0_from, "r") as f:
-                        filenames = f.read().split("\0")
+                source = sys.stdin if args.files0_from == "-" else open(args.files0_from, "r")
+                filenames = source.read().split("\0")
+                if source != sys.stdin:
+                    source.close()
 
-                # Process each filename
-                for filename in filenames:
-                    if not filename:  # Skip empty names (trailing NUL)
-                        continue
+                for filename in filter(None, filenames):
                     try:
-                        file_obj = open(filename, "rb")
-                        yield (filename, file_obj)
+                        yield (filename, open(filename, "rb"))
                     except OSError as e:
                         self.handle_error(e, filename)
-
                 return
             except Exception as e:
                 self.handle_error(e, args.files0_from)
                 return
 
-        # If no files specified, use stdin
+        # Handle regular file arguments or stdin
         if not args.files:
-            yield ("", sys.stdin.buffer)  # Empty name for stdin
+            yield ("", sys.stdin.buffer)
             return
 
-        # Process each file argument
         for filename in args.files:
-            if filename == "-":
-                yield ("", sys.stdin.buffer)  # Empty name for stdin
-            else:
-                try:
-                    # Open in binary mode to handle all types of files
-                    file_obj = open(filename, "rb")
-                    yield (filename, file_obj)
-                except OSError as e:
-                    self.handle_error(e, filename)
+            try:
+                if filename == "-":
+                    yield ("", sys.stdin.buffer)
+                else:
+                    yield (filename, open(filename, "rb"))
+            except OSError as e:
+                self.handle_error(e, filename)
 
     def run(self, args):
-        """Process files with GNU-specific behavior for --total."""
-        # Handle --total=only separately
-        if args.total == "only":
-            return self.run_total_only(args)
+        """Process files with GNU-specific behavior."""
+        # Handle --total=only as a special case
+        if getattr(args, "total", "auto") == "only":
+            return self._process_total_only(args)
 
         # Normal processing
         self.exit_code = 0
 
-        # If no options specified, show default set (lines, words, bytes)
-        if not (args.bytes or args.chars or args.lines or args.words or args.max_line_length):
+        # Set default options if none specified
+        if not any(getattr(args, opt, False) for opt in ["bytes", "chars", "lines", "words", "max_line_length"]):
             args.lines = args.words = args.bytes = True
 
-        # Get files to process
-        files = self.get_files(args)
-
-        # Process each file
+        # Process files and collect results
         file_results = []
-        for filename, file_obj in files:
+        for filename, file_obj in self.get_files(args):
             try:
                 file_results.append(self.process_file(filename, file_obj, args))
             except KeyboardInterrupt:
@@ -114,76 +100,60 @@ class GNU(WC):
                 self.handle_error(e, filename)
 
         # Print individual file results
-        for filename, counts in file_results:
-            self.print_line(counts, filename)
+        for result in file_results:
+            self.print_line(*result)
 
-        # Print totals based on --total option
-        should_print_total = False
-        if args.total == "auto":
-            should_print_total = len(file_results) > 1
-        elif args.total == "always":
-            should_print_total = True
-        elif args.total == "never":
-            should_print_total = False
+        # Handle totals based on --total option
+        total_mode = getattr(args, "total", "auto")
+        should_print_total = total_mode == "always" or (total_mode == "auto" and len(file_results) > 1)
 
         if should_print_total and file_results:
-            # Sum up all counts
-            totals = [0] * len(file_results[0][1])
-            for _, counts in file_results:
-                for i, count in enumerate(counts):
-                    totals[i] += count
-
+            # Sum all counts and print total
+            totals = [sum(counts[i] for _, counts in file_results) for i in range(len(file_results[0][1]))]
             self.print_summary(totals)
 
         return self.exit_code
 
-    def run_total_only(self, args):
-        """Run with --total=only to print only the total."""
+    def _process_total_only(self, args):
+        """Process with --total=only to print only the total."""
         self.exit_code = 0
 
-        # If no options specified, show default set (lines, words, bytes)
-        if not (args.bytes or args.chars or args.lines or args.words or args.max_line_length):
+        # Set default options if none specified
+        if not any(getattr(args, opt, False) for opt in ["bytes", "chars", "lines", "words", "max_line_length"]):
             args.lines = args.words = args.bytes = True
 
-        # Get files to process
-        files = self.get_files(args)
-
-        # Process all files but only accumulate totals
+        # Get structure of counts from an empty line
         empty_counts = self.process_line(b"", args)
         totals = [0] * len(empty_counts)
 
-        for filename, file_obj in files:
+        # Process all files, accumulating totals
+        for filename, file_obj in self.get_files(args):
             try:
                 for line in file_obj:
                     line_counts = self.process_line(line, args)
                     for i, count in enumerate(line_counts):
                         totals[i] += count
 
-                # Close file if not stdin
-                if filename != "":
+                if filename:  # Close if not stdin
                     file_obj.close()
             except Exception as e:
                 self.handle_error(e, filename)
 
-        # Print only the totals, with no label
+        # Print only the totals with no label
         self.print_line(totals, "")
-
         return self.exit_code
 
     def print_line(self, counts, filename, file=sys.stdout):
-        """Format and print count line for a file with GNU formatting."""
-        # GNU format: 7-character fields right-justified
-        # If only one count, no padding (GNU extension)
+        """Format output with GNU-specific formatting."""
+        # Handle single count with no leading space (GNU extension)
         if len(counts) == 1:
             output = f"{counts[0]}"
+            if filename:
+                output += f" {filename}"
         else:
-            output = ""
-            for count in counts:
-                if count is not None:
-                    output += f"{count:7d} "
-
-        # Add filename if not empty
-        if filename:
-            output += f" {filename}" if len(counts) == 1 else filename
+            # Standard formatting for multiple counts
+            output = " ".join(f"{count:7d}" for count in counts)
+            if filename:
+                output += f" {filename}"
 
         print(output, file=file)
