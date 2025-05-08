@@ -70,7 +70,7 @@ class GNU(WC):
         for filename in args.files:
             try:
                 if filename == "-":
-                    yield ("", sys.stdin.buffer)
+                    yield (filename, sys.stdin.buffer)
                 else:
                     yield (filename, open(filename, "rb"))
             except OSError as e:
