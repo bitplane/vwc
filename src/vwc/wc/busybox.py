@@ -20,30 +20,27 @@ class BusyBox(WC):
         # BusyBox only supports --help (not -h)
         parser.add_argument("--help", action="help", help="display help and exit")
 
+    # In BusyBox.get_files
     def get_files(self, args):
         """
         BusyBox-specific file handling - treats '-' as stdin.
         """
-        files = []
-
         # If no files specified, use stdin
         if not args.files:
-            files.append(("", sys.stdin.buffer))  # Empty name for stdin
-            return files
+            yield ("", sys.stdin.buffer)  # Empty name for stdin
+            return
 
         # Process each file argument
         for filename in args.files:
             if filename == "-":
-                files.append(("-", sys.stdin.buffer))  # called - if explicitly added
+                yield (filename, sys.stdin.buffer)  # explicit name
             else:
                 try:
                     # Open in binary mode to handle all types of files
                     file_obj = open(filename, "rb")
-                    files.append((filename, file_obj))
+                    yield (filename, file_obj)
                 except OSError as e:
                     self.handle_error(e, filename)
-
-        return files
 
     def print_line(self, counts, filename, file=sys.stdout):
         """Format and print count line for a file with BusyBox formatting."""

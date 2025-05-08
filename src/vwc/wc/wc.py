@@ -48,30 +48,6 @@ class WC:
         """Parse command line arguments"""
         return self.parser.parse_args(argv)
 
-    def get_files(self, args):
-        """
-        Get file objects to process based on arguments.
-        UNIX implementation treats '-' as a literal file name.
-        """
-        files = []
-
-        # If no files specified, use stdin
-        if not args.files:
-            files.append(("", sys.stdin.buffer))  # Empty name for stdin
-            return files
-
-        # Process each file argument
-        for filename in args.files:
-            try:
-                # Open in binary mode to handle all types of files
-                # In UNIX, '-' is just a regular file name
-                file_obj = open(filename, "rb")
-                files.append((filename, file_obj))
-            except OSError as e:
-                self.handle_error(e, filename)
-
-        return files
-
     def process_line(self, line, args):
         """Process a single line and return counts based on requested options."""
         counts = []
@@ -162,6 +138,26 @@ class WC:
         self.exit_code = code
         return code
 
+    def get_files(self, args):
+        """
+        Get file objects to process based on arguments as a generator.
+        UNIX implementation treats '-' as a literal file name.
+        """
+        # If no files specified, use stdin
+        if not args.files:
+            yield ("", sys.stdin.buffer)  # Empty name for stdin
+            return
+
+        # Process each file argument
+        for filename in args.files:
+            try:
+                # Open in binary mode to handle all types of files
+                # In UNIX, '-' is just a regular file name
+                file_obj = open(filename, "rb")
+                yield (filename, file_obj)
+            except OSError as e:
+                self.handle_error(e, filename)
+
     def run(self, args):
         """Process files and print counts."""
         self.exit_code = 0
@@ -170,24 +166,25 @@ class WC:
         if not (args.bytes or args.chars or args.lines or args.words or getattr(args, "max_line_length", False)):
             args.lines = args.words = args.bytes = True
 
-        # Get files to process
-        files = self.get_files(args)
+        # Get file generator
+        file_gen = self.get_files(args)
 
-        # Process each file
+        # Process each file as we get it
         file_results = []
-        for filename, file_obj in files:
+        for filename, file_obj in file_gen:
             try:
-                file_results.append(self.process_file(filename, file_obj, args))
+                file_result = self.process_file(filename, file_obj, args)
+                file_results.append(file_result)
+
+                # Print results for this file immediately
+                self.print_line(*file_result)
+
             except KeyboardInterrupt:
                 raise
             except Exception as e:
                 self.handle_error(e, filename)
 
-        # Print individual file results
-        for filename, counts in file_results:
-            self.print_line(counts, filename)
-
-        # Print totals if needed
+        # Print totals if needed (more than one file)
         if len(file_results) > 1:
             # Sum up all counts
             totals = [0] * len(file_results[0][1])

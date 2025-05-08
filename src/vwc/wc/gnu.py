@@ -41,12 +41,11 @@ class GNU(WC):
         parser.add_argument("--lines", action="store_true", dest="lines", help=argparse.SUPPRESS)
         parser.add_argument("--words", action="store_true", dest="words", help=argparse.SUPPRESS)
 
+    # In GNU.get_files
     def get_files(self, args):
         """
         GNU-specific file handling - handles '-' as stdin and --files0-from option.
         """
-        files = []
-
         # Handle --files0-from option if specified
         if hasattr(args, "files0_from") and args.files0_from:
             try:
@@ -63,33 +62,31 @@ class GNU(WC):
                         continue
                     try:
                         file_obj = open(filename, "rb")
-                        files.append((filename, file_obj))
+                        yield (filename, file_obj)
                     except OSError as e:
                         self.handle_error(e, filename)
 
-                return files
+                return
             except Exception as e:
                 self.handle_error(e, args.files0_from)
-                return []
+                return
 
         # If no files specified, use stdin
         if not args.files:
-            files.append(("", sys.stdin.buffer))  # Empty name for stdin
-            return files
+            yield ("", sys.stdin.buffer)  # Empty name for stdin
+            return
 
         # Process each file argument
         for filename in args.files:
             if filename == "-":
-                files.append(("-", sys.stdin.buffer))  # Explicitly added stdin
+                yield ("", sys.stdin.buffer)  # Empty name for stdin
             else:
                 try:
                     # Open in binary mode to handle all types of files
                     file_obj = open(filename, "rb")
-                    files.append((filename, file_obj))
+                    yield (filename, file_obj)
                 except OSError as e:
                     self.handle_error(e, filename)
-
-        return files
 
     def run(self, args):
         """Process files with GNU-specific behavior for --total."""
