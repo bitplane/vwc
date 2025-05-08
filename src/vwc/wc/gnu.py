@@ -177,13 +177,17 @@ class GNU(WC):
     def print_line(self, counts, filename, file=sys.stdout):
         """Format and print count line for a file with GNU formatting."""
         # GNU format: 7-character fields right-justified
-        output = ""
-        for count in counts:
-            if count is not None:
-                output += f"{count:7d} "
+        # If only one count, no padding (GNU extension)
+        if len(counts) == 1:
+            output = f"{counts[0]}"
+        else:
+            output = ""
+            for count in counts:
+                if count is not None:
+                    output += f"{count:7d} "
 
         # Add filename if not empty
         if filename:
-            output += filename
+            output += f" {filename}" if len(counts) == 1 else filename
 
         print(output, file=file)
