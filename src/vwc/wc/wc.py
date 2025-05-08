@@ -22,6 +22,8 @@ class WC:
         self.platform = platform.system()
         self.parser = self.create_parser()
         self.exit_code = 0
+        self.counts = None
+        self.totals = None
 
     def create_parser(self) -> argparse.ArgumentParser:
         """Create a basic argument parser with core options."""
@@ -91,7 +93,7 @@ class WC:
         return counts
 
     def print_line(self, counts, filename, file=sys.stdout):
-        """Format and print count line for a file."""
+        """Format and print count line for a file, totals or preview."""
         # Format counts with proper spacing
         output = ""
         for count in counts:
@@ -104,7 +106,16 @@ class WC:
 
         print(output, file=file)
 
-    def show_progress(self, counts, filename):
+    def print_totals(self, counts):
+        """Print total counts."""
+        if len(self.args.files) > 1:
+            self.print_line(counts, "total")
+
+    def print_counts(self, counts, filename, file=sys.stdout):
+        """Print counts for a file."""
+        self.print_line(counts, filename, file)
+
+    def print_progress(self, counts, filename):
         """Show progress to stderr if it's a TTY."""
         if not sys.stderr.isatty():
             return
@@ -116,11 +127,6 @@ class WC:
         sys.stderr.write("\033[F")
 
         sys.stderr.flush()
-
-    def print_totals(self, counts):
-        """Print total counts."""
-        if len(self.args.files) > 1:
-            self.print_line(counts, "total")
 
     def handle_error(self, error, filename):
         """Handle file error and report it."""
@@ -172,7 +178,7 @@ class WC:
                 counts = self.process_file(filename, file_obj, args)
                 totals = [totals[i] + counts[i] for i in range(len(counts))]
 
-                self.print_line(counts, filename)
+                self.print_counts(counts, filename)
             except KeyboardInterrupt:
                 raise
             except Exception as e:
@@ -203,7 +209,7 @@ class WC:
             # Show progress every ~200ms if stderr is a TTY
             current_time = time.time()
             if current_time - last_update >= 0.2:
-                self.show_progress(file_counts, filename)
+                self.print_progress(file_counts, filename)
                 last_update = current_time
 
         # Clear progress line before returning

@@ -56,7 +56,7 @@ class GNU(WC):
             except Exception as e:
                 self.handle_error(e, args.files0_from)
                 return []
-        return args.files or ["-"]
+        return args.files or [""]
 
     def get_files(self, args):
         """Handle file processing with GNU-specific behavior."""
@@ -70,7 +70,7 @@ class GNU(WC):
 
         for filename in files:
             try:
-                if filename == "-":
+                if filename == "-" or not filename:
                     yield (filename, sys.stdin.buffer)
                 else:
                     yield (filename, open(filename, "rb"))
@@ -80,31 +80,46 @@ class GNU(WC):
     def set_column_width(self, filenames):
         """Do the same as compute_number_width in GNU's wc.c"""
 
+        # We aren't reporting on files, so GNU assumes a width of 1 here
+        if self.args.total == "only":
+            self.column_width = 1
+            return
+
+        # If we don't actually have named files, we assume maximum width
         if not filenames:
             self.column_width = 7
             return
         else:
+            # otherwise, we will start at 1 and work our way up
             self.column_width = 1
 
+        # loop over files and check their sizes
         for name in filenames:
+            # hang on, this is stdin.
+            if name == "-" or not name:
+                self.column_width = 7
+                break
+
             try:
-                if name == "-" or not name:
-                    self.column_width = 7
-                    break
-                else:
-                    st = os.stat(name, follow_symlinks=False)
-
-                if not stat.S_ISREG(st.st_mode):
-                    self.column_width = 7
-                    break
-                else:
-                    new_width = len(str(st.st_size))
-                    self.column_width = max(self.column_width, new_width)
+                st = os.stat(name, follow_symlinks=False)
             except Exception:
-                # Ignore errors
-                pass
+                # Ignore errors. We don't want to complain about them early.
+                # GNU does this because it's trying to preserve UNIX behaviour.
+                continue
 
-    def print_totals(self, counts):
+            if not stat.S_ISREG(st.st_mode):
+                # yep, adding a dir to the list will cause GNU wc  to use 7 as the column width.
+                # Bug IMO, but we do the same.
+                self.column_width = 7
+                break
+            else:
+                # we have a regular file, and its size is the maximum size we will ever print.
+                # because printing characters can't print a bigger number than that. This is, of course,
+                # incorrect, because
+                new_width = len(str(st.st_size))
+                self.column_width = max(self.column_width, new_width)
+
+    def print_totals(self, counts, file=sys.stdout):
         """Print total counts."""
 
         always_print = self.args.total in ("always", "only")
@@ -113,7 +128,14 @@ class GNU(WC):
         should_print = always_print or (has_files and not never_print)
 
         if should_print:
-            self.print_line(counts, "total")
+            name = "" if self.args.total == "only" else "total"
+            self.print_line(counts, name, file=file)
+
+    def print_counts(self, counts, filename, file=sys.stdout):
+        """Print counts for a file."""
+        if self.args.total == "only":
+            return
+        self.print_line(counts, filename, file)
 
     def print_line(self, counts, filename, file=sys.stdout):
         """GNU-specific line printing using width ."""
