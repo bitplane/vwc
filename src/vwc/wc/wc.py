@@ -112,6 +112,8 @@ class WC:
         # Clear current line and move cursor to beginning
         sys.stderr.write("\r\033[K")
         self.print_line(counts, filename, file=sys.stderr)
+        # Move up a line to overwrite next time
+        sys.stderr.write("\033[F")
 
         sys.stderr.flush()
 
