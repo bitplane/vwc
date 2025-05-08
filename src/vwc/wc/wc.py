@@ -112,16 +112,8 @@ class WC:
         sys.stderr.write("\r\033[K")  # \r moves cursor to start, \033[K clears to end of line
 
         # Format counts with proper spacing
-        output = ""
-        for count in counts:
-            if count is not None:
-                output += f"{count:8d} "
+        self.print_line(counts, filename, file=sys.stderr)
 
-        # Add filename if not empty
-        if filename:
-            output += filename
-
-        sys.stderr.write(output)
         sys.stderr.flush()
 
     def print_summary(self, counts, total_label="total"):

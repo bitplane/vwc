@@ -146,6 +146,7 @@ class GNU(WC):
     def print_line(self, counts, filename, file=sys.stdout):
         """Format output with GNU-specific formatting."""
         # Handle single count with no leading space (GNU extension)
+        print(counts)
         if len(counts) == 1:
             output = f"{counts[0]}"
             if filename:
