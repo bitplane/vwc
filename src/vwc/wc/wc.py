@@ -169,6 +169,9 @@ class WC:
         # Get file generator
         file_gen = self.get_files(args)
 
+        # Count the original number of files requested
+        num_files_requested = len(args.files) if args.files else 1
+
         # Process each file as we get it
         file_results = []
         for filename, file_obj in file_gen:
@@ -184,8 +187,8 @@ class WC:
             except Exception as e:
                 self.handle_error(e, filename)
 
-        # Print totals if needed (more than one file)
-        if len(file_results) > 1:
+        # Print totals if needed (more than one file requested)
+        if num_files_requested > 1 and file_results:
             # Sum up all counts
             totals = [0] * len(file_results[0][1])
             for _, counts in file_results:
