@@ -5,6 +5,7 @@ Main entry point for vwc.
 
 import signal
 import sys
+
 from vwc.wc import get_wc
 
 
@@ -19,9 +20,9 @@ def main():
 
     try:
         wc = get_wc()
-        args = wc.parse_args(sys.argv[1:])
-        code = wc.run(args)
-        return code  # Return instead of sys.exit for better testability
+        wc.parse_args(sys.argv[1:])
+        code = wc.run()
+        return code
     except KeyboardInterrupt:
         sys.stderr.write("\n")
         return 130  # Standard exit code for SIGINT

@@ -5,6 +5,7 @@ This is the base UNIX implementation.
 """
 
 import argparse
+import os
 import platform
 import sys
 import time
@@ -46,7 +47,7 @@ class WC:
 
     def parse_args(self, argv):
         """Parse command line arguments"""
-        return self.parser.parse_args(argv)
+        self.args = self.parser.parse_args(argv)
 
     def process_line(self, line, args):
         """Process a single line and return counts based on requested options."""
@@ -109,20 +110,20 @@ class WC:
             return
 
         # Clear current line and move cursor to beginning
-        sys.stderr.write("\r\033[K")  # \r moves cursor to start, \033[K clears to end of line
-
-        # Format counts with proper spacing
+        sys.stderr.write("\r\033[K")
         self.print_line(counts, filename, file=sys.stderr)
 
         sys.stderr.flush()
 
-    def print_summary(self, counts, total_label="total"):
-        """Print summary of total counts."""
-        self.print_line(counts, total_label)
+    def print_totals(self, counts):
+        """Print total counts."""
+        if len(self.args.files) > 1:
+            self.print_line(counts, "total")
 
     def handle_error(self, error, filename):
         """Handle file error and report it."""
-        sys.stderr.write(f"vwc: {filename}: {error.strerror}\n")
+        exe = os.path.basename(sys.argv[0])
+        sys.stderr.write(f"{exe}: {filename}: {error.strerror}\n")
         self.set_status(1)  # Set non-zero exit status
 
     def set_status(self, code):
@@ -150,9 +151,10 @@ class WC:
             except OSError as e:
                 self.handle_error(e, filename)
 
-    def run(self, args):
+    def run(self):
         """Process files and print counts."""
         self.exit_code = 0
+        args = self.args
 
         # If no options specified, show default set (lines, words, bytes)
         if not (args.bytes or args.chars or args.lines or args.words or getattr(args, "max_line_length", False)):
@@ -161,33 +163,20 @@ class WC:
         # Get file generator
         file_gen = self.get_files(args)
 
-        # Count the original number of files requested
-        num_files_requested = len(args.files) if args.files else 1
-
-        # Process each file as we get it
-        file_results = []
+        # Initialize totals for each count type
+        totals = [0] * len(self.process_line(b"", args))
         for filename, file_obj in file_gen:
             try:
-                file_result = self.process_file(filename, file_obj, args)
-                file_results.append(file_result)
+                counts = self.process_file(filename, file_obj, args)
+                totals = [totals[i] + counts[i] for i in range(len(counts))]
 
-                # Print results for this file immediately
-                self.print_line(*file_result)
-
+                self.print_line(counts, filename)
             except KeyboardInterrupt:
                 raise
             except Exception as e:
                 self.handle_error(e, filename)
 
-        # Print totals if needed (more than one file requested)
-        if num_files_requested > 1 and file_results:
-            # Sum up all counts
-            totals = [0] * len(file_results[0][1])
-            for _, counts in file_results:
-                for i, count in enumerate(counts):
-                    totals[i] += count
-
-            self.print_summary(totals)
+        self.print_totals(totals)
 
         return self.exit_code
 
@@ -224,4 +213,4 @@ class WC:
         if filename != "":
             file_obj.close()
 
-        return (filename, file_counts)
+        return file_counts

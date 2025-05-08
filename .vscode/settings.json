@@ -2,6 +2,9 @@
     "editor.rulers": [
         120
     ],
+    "ruff.lineLength": 120,
+    "ruff.enable": true,
+    "flake8.enabled": false,
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
         "source.fixAll": "explicit",
