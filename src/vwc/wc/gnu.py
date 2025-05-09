@@ -1,5 +1,7 @@
 # src/vwc/wc/gnu.py
 import argparse
+import os
+import stat
 import sys
 
 from .linux import Linux
@@ -45,6 +47,7 @@ class GNU(Linux):
     def get_file_names(self):
         """Return list of file names from --files0-from or args.files."""
         args = self.args
+
         if getattr(args, "files0_from", None):
             try:
                 source = sys.stdin if args.files0_from == "-" else open(args.files0_from, "r")
@@ -55,11 +58,14 @@ class GNU(Linux):
             except Exception as e:
                 self.handle_error(e, args.files0_from)
                 return []
-        return args.files or [""]
 
-    def print_totals(self, counts, file=sys.stdout):
+        file_names = args.files or [""]
+        self.set_column_width(file_names)
+
+        return file_names
+
+    def print_totals(self, file=sys.stdout):
         """Print total counts."""
-
         always_print = self.args.total in ("always", "only")
         never_print = self.args.total == "never"
         has_files = len(self.args.files) > 1
@@ -67,22 +73,83 @@ class GNU(Linux):
 
         if should_print:
             name = "" if self.args.total == "only" else "total"
-            self.print_line(counts, name, file=file)
+            counts = self.get_counts_array(use_totals=True)
+            self.print_line(counts, name, file)
 
-    def print_counts(self, counts, filename, file=sys.stdout):
+    def print_counts(self, filename, file=sys.stdout):
         """Print counts for a file."""
         if self.args.total == "only":
             return
+
+        counts = self.get_counts_array()
         self.print_line(counts, filename, file)
 
     def print_line(self, counts, filename, file=sys.stdout):
-        """GNU-specific line printing using width ."""
-        if len(counts) == 1:
-            output = f"{counts[0]}"
-            if filename:
-                output += f" {filename}"
-        else:
-            output = " ".join(f"{count:{self.column_width}d}" for count in counts)
-            if filename:
-                output += f" {filename}"
+        """GNU-specific line printing using width."""
+        output = " ".join(f"{count:{self.column_width}d}" for count in counts)
+        if filename:
+            output += f" {filename}"
         print(output, file=file, flush=True)
+
+    def set_column_width(self, filenames):
+        """
+        Do the same as compute_number_width in GNU's wc.c
+        """
+
+        if not self.use_padding():
+            self.column_width = 1
+            return
+
+        # If we don't actually have named files, we assume maximum width
+        if not filenames:
+            self.column_width = 7
+            return
+        else:
+            # otherwise, we will start at 1 and work our way up
+            self.column_width = 1
+
+        total_size = 0
+
+        # loop over files and check their sizes
+        for name in filenames:
+            # hang on, this is stdin.
+            if name == "-" or not name:
+                self.column_width = 7
+                break
+
+            try:
+                st = os.stat(name, follow_symlinks=False)
+            except Exception:
+                # Ignore errors. We don't want to complain about them early.
+                # GNU does this because it's trying to preserve UNIX behaviour.
+                continue
+
+            if not stat.S_ISREG(st.st_mode):
+                # yep, adding a dir to the list will cause GNU wc to use 7 as the column width.
+                # Bug IMO, but we do the same.
+                self.column_width = 7
+                break
+            else:
+                # we have a regular file, and its size is the maximum size we will ever print.
+                # because printing characters can't print a bigger number than that. This is, of course,
+                # incorrect, because
+                total_size += st.st_size
+                new_width = len(str(total_size))
+                self.column_width = max(self.column_width, new_width)
+                if self.column_width >= 7:
+                    # we have a file that is 7 digits long. We can stop now.
+                    self.column_width = 7
+                    break
+
+    def use_padding(self):
+        """
+        GNU-specific padding rules.
+        """
+        # Check if we're using 'total=only'
+        totals_only = hasattr(self.args, "total") and self.args.total == "only"
+        columns = ("lines", "words", "bytes", "chars", "max_line_length")
+        column_count = sum(1 for arg in columns if hasattr(self.args, arg) and getattr(self.args, arg))
+        has_multiple_files = len(self.args.files) > 1
+
+        # GNU uses padding for totals_only, or follows the Linux rules
+        return totals_only or column_count > 1 or has_multiple_files

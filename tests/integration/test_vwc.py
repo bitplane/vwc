@@ -2,6 +2,7 @@
 #   Don't mess with this file unless explicitly asked to change it, and if you do,
 #   do it very carefully. We spent too much time arguing about it.
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -78,12 +79,24 @@ def docker_image_factory(request):
     return _get_image
 
 
+def empty_dir(path: Path):
+    """Remove all files and directories in the given path, then recreate it"""
+    if path.exists():
+        for child in path.iterdir():
+            if child.is_file() or child.is_symlink():
+                child.unlink()
+            elif child.is_dir():
+                shutil.rmtree(child)
+    else:
+        path.mkdir(parents=True)
+
+
 # Run a test with either original wc or vwc
 def run_test(image_name, script_path, use_vwc=False):
     """Run a test script in the container with either original wc or vwc"""
-    # Create an output directory
     output_dir = Path(f"/tmp/vwc-test-{os.getpid()}/{script_path.stem}/{use_vwc}")
-    os.makedirs(output_dir, exist_ok=True)
+    # remove and recreate the output dir
+    empty_dir(output_dir)
 
     # Get project source
     project_root = Path(__file__).parent.parent.parent
@@ -131,6 +144,8 @@ def assert_identical(wc_dir, vwc_dir):
     for file_path in vwc_dir.glob("*"):
         all_files.add(file_path.name)
 
+    all_files = sorted(all_files)
+
     if not all_files:
         raise ValueError("No files found in either output directory")
 
@@ -142,6 +157,10 @@ def assert_identical(wc_dir, vwc_dir):
         assert expected_file.exists(), f"Unexpected file: {filename}"
         assert actual_file.exists(), f"Missing expected file: {filename}"
 
+        # skip directories, but only if they're in both
+        if expected_file.is_dir() and actual_file.is_dir():
+            continue
+
         # Compare file contents
         with open(expected_file, "rb") as f:
             expected = f.read()
@@ -152,7 +171,7 @@ def assert_identical(wc_dir, vwc_dir):
         print(f"Expected: {expected}")
         print(f"Actual:   {actual}\n\n")
 
-        assert expected == actual, f"Differences in {filename}"
+        assert actual == expected, f"Differences in {filename}"
 
 
 # Generate test parameters
@@ -177,6 +196,9 @@ def test_vwc_integration(script, platform, docker_image_factory):
 
     # Run with vwc
     vwc_output_dir = run_test(image_name, script, use_vwc=True)
+
+    print("script contents:")
+    print(script.read_text())
 
     # Compare all output files
     assert_identical(wc_output_dir, vwc_output_dir)

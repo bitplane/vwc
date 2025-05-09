@@ -22,9 +22,9 @@ export PATH="$TEMP_DIR:$PATH"
 
 cd "$OUTPUT_DIR" || exit 1
 
-"$TEST_SCRIPT" > "stdout" 2> "stderr"
+"$TEST_SCRIPT" > "2.stdout" 2> "1.stderr"
 echo $? > "exitcode"
-"$TEST_SCRIPT" > "combined" 2>&1
+"$TEST_SCRIPT" > "3.combined" 2>&1
 
 # Clean up
 rm -rf "$TEMP_DIR"
