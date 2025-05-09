@@ -144,6 +144,8 @@ def assert_identical(wc_dir, vwc_dir):
     for file_path in vwc_dir.glob("*"):
         all_files.add(file_path.name)
 
+    all_files = sorted(all_files)
+
     if not all_files:
         raise ValueError("No files found in either output directory")
 
@@ -169,7 +171,7 @@ def assert_identical(wc_dir, vwc_dir):
         print(f"Expected: {expected}")
         print(f"Actual:   {actual}\n\n")
 
-        assert expected == actual, f"Differences in {filename}"
+        assert actual == expected, f"Differences in {filename}"
 
 
 # Generate test parameters
@@ -194,6 +196,9 @@ def test_vwc_integration(script, platform, docker_image_factory):
 
     # Run with vwc
     vwc_output_dir = run_test(image_name, script, use_vwc=True)
+
+    print("script contents:")
+    print(script.read_text())
 
     # Compare all output files
     assert_identical(wc_output_dir, vwc_output_dir)

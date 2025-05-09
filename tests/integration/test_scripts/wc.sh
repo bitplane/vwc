@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# Bog standard behaviour of wc
+
 set -e
 
 # Create a test file with 4 lines

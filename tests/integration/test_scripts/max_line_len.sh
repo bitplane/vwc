@@ -8,6 +8,6 @@ echo two       >  two
 echo 2nd       >> two
 echo secondist >> two
 
-echo third     > three
+echo third     >  three
 
 wc -L one two three

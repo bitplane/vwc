@@ -1,7 +1,7 @@
 #!/bin/sh
 
-mkdir dir1
+mkdir -p dir1
 echo "file contents" > file1
-mkdir dir2
+mkdir -p dir2
 
 wc dir1 file1 dir2

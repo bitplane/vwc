@@ -3,4 +3,4 @@
 echo "Hello," > hello
 echo "world" > world
 
-wc hello missing world missing
+wc hello missing world gone
