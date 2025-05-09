@@ -83,12 +83,10 @@ class WC:
             # Only decode if not already done
             if not (self.args.words or self.args.chars):
                 try:
-                    text = line.decode("utf-8")
+                    text = line.decode("utf-8", errors="replace")
                 except UnicodeDecodeError:
                     text = line.decode("latin-1")
-            # TODO: This is simplistic - real max line length should consider
-            # display width, tabs, etc. according to platform
-            counts.append(len(text))
+            counts.append(len(text.strip("\n")))
 
         return counts
 
