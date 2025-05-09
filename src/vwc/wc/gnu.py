@@ -86,14 +86,9 @@ class GNU(Linux):
 
     def print_line(self, counts, filename, file=sys.stdout):
         """GNU-specific line printing using width."""
-        if len(counts) == 1:
-            output = f"{counts[0]}"
-            if filename:
-                output += f" {filename}"
-        else:
-            output = " ".join(f"{count:{self.column_width}d}" for count in counts)
-            if filename:
-                output += f" {filename}"
+        output = " ".join(f"{count:{self.column_width}d}" for count in counts)
+        if filename:
+            output += f" {filename}"
         print(output, file=file, flush=True)
 
     def set_column_width(self, filenames):
@@ -101,7 +96,16 @@ class GNU(Linux):
         Do the same as compute_number_width in GNU's wc.c
         """
         # We aren't reporting on files, so GNU assumes a width of 1 here
-        if hasattr(self.args, "total") and self.args.total == "only":
+        totals_only = hasattr(self.args, "total") and self.args.total == "only"
+
+        # When there's only 1 column, it assumes a width of 1.
+        # apart from the max line length column, which for some reason skips this check
+        column_count = sum(
+            1 for arg in vars(self.args) if getattr(self.args, arg) and arg in ("lines", "words", "bytes", "chars")
+        )
+        has_max_line_length = getattr(self.args, "max_line_length", False)
+
+        if totals_only or (column_count <= 1 and not has_max_line_length):
             self.column_width = 1
             return
 
