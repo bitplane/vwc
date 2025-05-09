@@ -87,3 +87,11 @@ class Linux(WC):
                     # we have a file that is 7 digits long. We can stop now.
                     self.column_width = 7
                     break
+
+    def handle_error(self, error, filename):
+        """
+        In Linux, print the counts on directories.
+        """
+        super().handle_error(error, filename)
+        if isinstance(error, IsADirectoryError):
+            self.print_counts([0] * len(self.process_line(b"")), filename)
