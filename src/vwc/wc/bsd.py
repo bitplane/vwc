@@ -1,5 +1,6 @@
 # src/vwc/wc/bsd.py
 import sys
+
 from .wc import WC
 
 
@@ -35,4 +36,4 @@ class BSD(WC):
         if filename:
             output += filename
 
-        print(output, file=file)
+        print(output, file=file, flush=True)

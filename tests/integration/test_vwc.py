@@ -123,7 +123,6 @@ def run_test(image_name, script_path, use_vwc=False):
 
 def assert_identical(wc_dir, vwc_dir):
     """Compare all files in the output directories"""
-    differences = []
 
     # Get all files in both directories
     all_files = set()
@@ -137,24 +136,23 @@ def assert_identical(wc_dir, vwc_dir):
 
     # Compare each file
     for filename in all_files:
-        wc_file = wc_dir / filename
-        vwc_file = vwc_dir / filename
+        expected_file = wc_dir / filename
+        actual_file = vwc_dir / filename
 
-        # Handle missing files
-        if not wc_file.exists():
-            differences.append((filename, "", "Extra file found"))
-            continue
-        if not vwc_file.exists():
-            differences.append((filename, "", "File is missing"))
-            continue
+        assert expected_file.exists(), f"Unexpected file: {filename}"
+        assert actual_file.exists(), f"Missing expected file: {filename}"
 
         # Compare file contents
-        with open(wc_file, "r") as f:
-            wc_content = f.read()
-        with open(vwc_file, "r") as f:
-            vwc_content = f.read()
+        with open(expected_file, "rb") as f:
+            expected = f.read()
+        with open(actual_file, "rb") as f:
+            actual = f.read()
 
-        assert wc_content == vwc_content, f"Differences in {filename}"
+        print(f"Comparing {filename}:\n")
+        print(f"Expected: {expected}")
+        print(f"Actual:   {actual}\n\n")
+
+        assert expected == actual, f"Differences in {filename}"
 
 
 # Generate test parameters

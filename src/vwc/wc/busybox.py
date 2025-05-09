@@ -1,10 +1,10 @@
 # src/vwc/wc/busybox.py - create this file
 import sys
 
-from .wc import WC
+from .linux import Linux
 
 
-class BusyBox(WC):
+class BusyBox(Linux):
     """
     wc - word, line, and byte count
 
@@ -21,18 +21,14 @@ class BusyBox(WC):
         # BusyBox only supports --help (not -h)
         parser.add_argument("--help", action="help", help="display help and exit")
 
-    # In BusyBox.get_files
-    def get_files(self, args):
+    def get_files(self):
         """
         BusyBox-specific file handling - treats '-' as stdin.
         """
-        # If no files specified, use stdin
-        if not args.files:
-            yield ("", sys.stdin.buffer)  # Empty name for stdin
-            return
+        names = self.get_file_names()
 
         # Process each file argument
-        for filename in args.files:
+        for filename in names:
             if filename == "-":
                 yield (filename, sys.stdin.buffer)  # explicit name
             else:
@@ -58,4 +54,4 @@ class BusyBox(WC):
             if filename:
                 output += f" {filename}"
 
-        print(output, file=file)
+        print(output, file=file, flush=True)
