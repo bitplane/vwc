@@ -23,17 +23,26 @@ class BusyBox(Linux):
 
     def print_line(self, counts, filename, file=sys.stdout):
         """Format and print count line for a file with BusyBox formatting."""
-        if len(counts) == 1:
-            # When only one count is printed, no padding
-            output = f"{counts[0]}"
-            if filename:
-                output += f" {filename}"
-        else:
+        if self.use_padding():
             # BusyBox format: 9-character fields right-justified with a space between fields
             output = " ".join(f"{count:9d}" for count in counts)
+        else:
+            output = f"{counts[0]}"
 
-            # Add filename if not empty
-            if filename:
-                output += f" {filename}"
+        # Add filename if not empty
+        if filename:
+            output += f" {filename}"
 
         print(output, file=file, flush=True)
+
+    def use_padding(self):
+        """
+        BusyBox-specific padding rules.
+        BusyBox uses padding for -L only when processing multiple files.
+        """
+        has_max_line_length = getattr(self.args, "max_line_length", False)
+        has_multiple_files = len(self.args.files) > 1
+        columns = ("lines", "words", "bytes", "chars")
+        column_count = sum(1 for arg in columns if hasattr(self.args, arg) and getattr(self.args, arg))
+
+        return column_count > 1 or (has_max_line_length and has_multiple_files)

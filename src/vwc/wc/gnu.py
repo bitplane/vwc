@@ -95,17 +95,8 @@ class GNU(Linux):
         """
         Do the same as compute_number_width in GNU's wc.c
         """
-        # We aren't reporting on files, so GNU assumes a width of 1 here
-        totals_only = hasattr(self.args, "total") and self.args.total == "only"
 
-        # When there's only 1 column, it assumes a width of 1.
-        # apart from the max line length column, which for some reason skips this check
-        column_count = sum(
-            1 for arg in vars(self.args) if getattr(self.args, arg) and arg in ("lines", "words", "bytes", "chars")
-        )
-        has_max_line_length = getattr(self.args, "max_line_length", False)
-
-        if totals_only or (column_count <= 1 and not has_max_line_length):
+        if not self.use_padding():
             self.column_width = 1
             return
 
@@ -149,3 +140,16 @@ class GNU(Linux):
                     # we have a file that is 7 digits long. We can stop now.
                     self.column_width = 7
                     break
+
+    def use_padding(self):
+        """
+        GNU-specific padding rules.
+        """
+        # Check if we're using 'total=only'
+        totals_only = hasattr(self.args, "total") and self.args.total == "only"
+        columns = ("lines", "words", "bytes", "chars", "max_line_length")
+        column_count = sum(1 for arg in columns if hasattr(self.args, arg) and getattr(self.args, arg))
+        has_multiple_files = len(self.args.files) > 1
+
+        # GNU uses padding for totals_only, or follows the Linux rules
+        return totals_only or column_count > 1 or has_multiple_files
