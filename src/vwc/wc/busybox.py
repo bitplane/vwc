@@ -29,7 +29,7 @@ class BusyBox(Linux):
 
         # Process each file argument
         for filename in names:
-            if filename == "-":
+            if filename == "-" or not filename:
                 yield (filename, sys.stdin.buffer)  # explicit name
             else:
                 try:
