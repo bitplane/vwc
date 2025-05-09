@@ -57,9 +57,8 @@ class GNU(Linux):
                 return []
         return args.files or [""]
 
-    def print_totals(self, counts, file=sys.stdout):
+    def print_totals(self, file=sys.stdout):
         """Print total counts."""
-
         always_print = self.args.total in ("always", "only")
         never_print = self.args.total == "never"
         has_files = len(self.args.files) > 1
@@ -67,16 +66,19 @@ class GNU(Linux):
 
         if should_print:
             name = "" if self.args.total == "only" else "total"
-            self.print_line(counts, name, file=file)
+            counts = self.get_counts_array(use_totals=True)
+            self.print_line(counts, name, file)
 
-    def print_counts(self, counts, filename, file=sys.stdout):
+    def print_counts(self, filename, file=sys.stdout):
         """Print counts for a file."""
         if self.args.total == "only":
             return
+
+        counts = self.get_counts_array()
         self.print_line(counts, filename, file)
 
     def print_line(self, counts, filename, file=sys.stdout):
-        """GNU-specific line printing using width ."""
+        """GNU-specific line printing using width."""
         if len(counts) == 1:
             output = f"{counts[0]}"
             if filename:

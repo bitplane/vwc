@@ -1,4 +1,4 @@
-# src/vwc/wc/busybox.py - create this file
+# src/vwc/wc/busybox.py
 import sys
 
 from .linux import Linux

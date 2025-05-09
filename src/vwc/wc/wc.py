@@ -1,3 +1,9 @@
+# src/vwc/wc/wc.py
+"""
+Base class for word count (wc) implementations.
+This is the base UNIX implementation.
+"""
+
 import argparse
 import os
 import platform
@@ -15,12 +21,16 @@ class WC:
     """
 
     def __init__(self):
+        # Configuration state
         self.platform = platform.system()
         self.parser = self.create_parser()
         self.exit_code = 0
-        self.counts = None
-        self.totals = None
         self.column_width = 7  # Default column width
+        self.args = None
+
+        # Reset current file count and total counts
+        self.reset_counts()
+        self.reset_totals()
 
     def create_parser(self) -> argparse.ArgumentParser:
         """Create a basic argument parser with core options."""
@@ -64,28 +74,27 @@ class WC:
 
         return width
 
+    def reset_counts(self):
+        """Reset file-specific counts."""
+        self.lines = 0
+        self.words = 0
+        self.bytes = 0
+        self.chars = 0
+        self.max_width = 0
+
+    def reset_totals(self):
+        """Reset total counts."""
+        self.total_lines = 0
+        self.total_words = 0
+        self.total_bytes = 0
+        self.total_chars = 0
+        self.total_max_width = 0
+
     def process_line(self, line):
-        """Process a single line and return counts based on requested options."""
-        counts = []
-
-        # Skip processing for empty line (used for initialization)
-        if not line:
-            # Add placeholders for all requested counts
-            if self.args.lines:
-                counts.append(0)
-            if self.args.words:
-                counts.append(0)
-            if self.args.bytes:
-                counts.append(0)
-            if self.args.chars:
-                counts.append(0)
-            if getattr(self.args, "max_line_length", False):
-                counts.append(0)
-            return counts
-
+        """Process a single line and update instance state."""
         # Calculate all requested counts
         if self.args.lines:
-            counts.append(1)  # Always 1 line per line
+            self.lines += 1
 
         # Decode for word and character counts
         try:
@@ -94,20 +103,40 @@ class WC:
             text = line.decode("latin-1")
 
         if self.args.words:
-            counts.append(len(text.split()))
+            self.words += len(text.split())
 
         if self.args.bytes:
-            counts.append(len(line))  # Byte count
+            self.bytes += len(line)
 
         if self.args.chars:
-            counts.append(len(text))  # Character count
+            self.chars += len(text)
 
         if getattr(self.args, "max_line_length", False):
             # Strip newline for display width calculation
             text_no_nl = text.rstrip("\n")
             # Calculate display width according to POSIX rules
             display_width = self.get_display_width(text_no_nl)
-            counts.append(display_width)
+            # Update max_width if this line is longer
+            self.max_width = max(self.max_width, display_width)
+
+    def get_counts_array(self, use_totals=False):
+        """Get current counts as an array in the standard order."""
+        counts = []
+
+        if self.args.lines:
+            counts.append(self.total_lines if use_totals else self.lines)
+
+        if self.args.words:
+            counts.append(self.total_words if use_totals else self.words)
+
+        if self.args.bytes:
+            counts.append(self.total_bytes if use_totals else self.bytes)
+
+        if self.args.chars:
+            counts.append(self.total_chars if use_totals else self.chars)
+
+        if getattr(self.args, "max_line_length", False):
+            counts.append(self.total_max_width if use_totals else self.max_width)
 
         return counts
 
@@ -125,22 +154,25 @@ class WC:
 
         print(output, file=file, flush=True)
 
-    def print_totals(self, counts):
+    def print_totals(self, file=sys.stdout):
         """Print total counts."""
         if len(self.args.files) > 1:
-            self.print_line(counts, "total")
+            counts = self.get_counts_array(use_totals=True)
+            self.print_line(counts, "total", file)
 
-    def print_counts(self, counts, filename, file=sys.stdout):
-        """Print counts for a file."""
+    def print_counts(self, filename, file=sys.stdout):
+        """Print counts for the current file."""
+        counts = self.get_counts_array()
         self.print_line(counts, filename, file)
 
-    def print_progress(self, counts, filename):
+    def print_progress(self, filename):
         """Show progress to stderr if it's a TTY."""
         if not sys.stderr.isatty():
             return
 
         # Clear current line and move cursor to beginning
         sys.stderr.write("\r\033[K")
+        counts = self.get_counts_array()
         self.print_line(counts, filename, file=sys.stderr)
         # Move up a line to overwrite next time
         sys.stderr.write("\033[F")
@@ -190,62 +222,61 @@ class WC:
         # Get file generator
         file_gen = self.get_files()
 
-        # Initialize totals for each count type
-        totals = [0] * len(self.process_line(b""))
+        # Reset total counters
+        self.reset_totals()
+
         for filename, file_obj in file_gen:
             try:
-                counts = self.process_file(filename, file_obj)
+                # Process the file
+                self.process_file(filename, file_obj)
 
-                # Update totals - for max_line_length, take the max rather than sum
-                has_max_line = getattr(self.args, "max_line_length", False)
-                for i in range(len(counts)):
-                    # For the max_line_length field, take max instead of sum
-                    if has_max_line and i == len(counts) - 1:
-                        totals[i] = max(totals[i], counts[i])
-                    else:
-                        totals[i] += counts[i]
+                # Print counts for this file
+                self.print_counts(filename)
 
-                self.print_counts(counts, filename)
+                # Update totals from current file counts
+                self.update_totals()
+
             except KeyboardInterrupt:
                 raise
             except Exception as e:
                 self.handle_error(e, filename)
 
-        self.print_totals(totals)
+        # Print totals if needed
+        self.print_totals()
 
         return self.exit_code
 
-    def process_file(self, filename, file_obj):
-        """Process a file and return (filename, counts)."""
-        # Get the empty counts structure to understand what counts we're calculating
-        empty_counts = self.process_line(b"")
-        file_counts = [0] * len(empty_counts)
+    def update_totals(self):
+        """Update total counts from current file counts."""
+        if self.args.lines:
+            self.total_lines += self.lines
+        if self.args.words:
+            self.total_words += self.words
+        if self.args.bytes:
+            self.total_bytes += self.bytes
+        if self.args.chars:
+            self.total_chars += self.chars
+        if getattr(self.args, "max_line_length", False):
+            # For max line length, take the maximum value
+            self.total_max_width = max(self.total_max_width, self.max_width)
 
-        # Flag for max line length position
-        has_max_line = getattr(self.args, "max_line_length", False)
-        max_line_idx = len(file_counts) - 1 if has_max_line else -1
+    def process_file(self, filename, file_obj):
+        """Process a file and update instance state."""
+        # Reset counts for this file
+        self.reset_counts()
 
         # Track timing for progress updates
         last_update = time.time()
 
         # Process file line by line
         for line in file_obj:
-            # Process the line
-            line_counts = self.process_line(line)
-
-            # Update file counts
-            for i, count in enumerate(line_counts):
-                if has_max_line and i == max_line_idx:
-                    # For max line length, take the maximum
-                    file_counts[i] = max(file_counts[i], count)
-                else:
-                    # For other counts, sum them
-                    file_counts[i] += count
+            # Process the line and update state
+            self.process_line(line)
 
             # Show progress every ~200ms if stderr is a TTY
             current_time = time.time()
             if current_time - last_update >= 0.2:
-                self.print_progress(file_counts, filename)
+                self.print_progress(filename)
                 last_update = current_time
 
         # Clear progress line before returning
@@ -254,7 +285,5 @@ class WC:
             sys.stderr.flush()
 
         # Close file if not stdin
-        if filename != "":
+        if filename and file_obj != sys.stdin.buffer:
             file_obj.close()
-
-        return file_counts

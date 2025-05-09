@@ -1,3 +1,4 @@
+# src/vwc/wc/linux.py
 import os
 import stat
 import sys
@@ -18,7 +19,7 @@ class Linux(WC):
         return self.args.files or [""]
 
     def get_files(self):
-        """Handle file processing with BuxyBox/GNU behavior."""
+        """Handle file processing with BusyBox/GNU behavior."""
 
         files = self.get_file_names()
         self.set_column_width(files)
@@ -43,7 +44,7 @@ class Linux(WC):
         """
 
         # We aren't reporting on files, so GNU assumes a width of 1 here
-        if self.args.total == "only":
+        if hasattr(self.args, "total") and self.args.total == "only":
             self.column_width = 1
             return
 
@@ -72,7 +73,7 @@ class Linux(WC):
                 continue
 
             if not stat.S_ISREG(st.st_mode):
-                # yep, adding a dir to the list will cause GNU wc  to use 7 as the column width.
+                # yep, adding a dir to the list will cause GNU wc to use 7 as the column width.
                 # Bug IMO, but we do the same.
                 self.column_width = 7
                 break
@@ -94,4 +95,8 @@ class Linux(WC):
         """
         super().handle_error(error, filename)
         if isinstance(error, IsADirectoryError):
-            self.print_counts([0] * len(self.process_line(b"")), filename)
+            # Reset counts to zeros for directories
+            self.reset_counts()
+
+            # Print zero counts for the directory
+            self.print_counts(filename)
