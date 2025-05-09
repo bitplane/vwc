@@ -94,7 +94,7 @@ class WC:
         """Process a single line and update instance state."""
         # Calculate all requested counts
         if self.args.lines:
-            self.lines += 1
+            self.lines += line.count(b"\n")
 
         # Decode for word and character counts
         try:
