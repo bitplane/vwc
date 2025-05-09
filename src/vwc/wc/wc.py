@@ -22,6 +22,8 @@ class WC:
         self.platform = platform.system()
         self.parser = self.create_parser()
         self.exit_code = 0
+        self.counts = None
+        self.totals = None
 
     def create_parser(self) -> argparse.ArgumentParser:
         """Create a basic argument parser with core options."""
@@ -49,15 +51,15 @@ class WC:
         """Parse command line arguments"""
         self.args = self.parser.parse_args(argv)
 
-    def process_line(self, line, args):
+    def process_line(self, line):
         """Process a single line and return counts based on requested options."""
         counts = []
 
         # Only calculate what's needed based on args
-        if args.lines:
+        if self.args.lines:
             counts.append(1)  # Always 1 line per line
 
-        if args.words:
+        if self.args.words:
             # Only decode and split if we need word count
             try:
                 text = line.decode("utf-8")
@@ -65,21 +67,21 @@ class WC:
                 text = line.decode("latin-1")
             counts.append(len(text.split()))
 
-        if args.bytes:
+        if self.args.bytes:
             counts.append(len(line))  # Byte count
 
-        if args.chars:
+        if self.args.chars:
             # Only decode if not already done for words
-            if not args.words:
+            if not self.args.words:
                 try:
                     text = line.decode("utf-8")
                 except UnicodeDecodeError:
                     text = line.decode("latin-1")
             counts.append(len(text))
 
-        if getattr(args, "max_line_length", False):
+        if getattr(self.args, "max_line_length", False):
             # Only decode if not already done
-            if not (args.words or args.chars):
+            if not (self.args.words or self.args.chars):
                 try:
                     text = line.decode("utf-8")
                 except UnicodeDecodeError:
@@ -91,7 +93,7 @@ class WC:
         return counts
 
     def print_line(self, counts, filename, file=sys.stdout):
-        """Format and print count line for a file."""
+        """Format and print count line for a file, totals or preview."""
         # Format counts with proper spacing
         output = ""
         for count in counts:
@@ -102,9 +104,18 @@ class WC:
         if filename:
             output += filename
 
-        print(output, file=file)
+        print(output, file=file, flush=True)
 
-    def show_progress(self, counts, filename):
+    def print_totals(self, counts):
+        """Print total counts."""
+        if len(self.args.files) > 1:
+            self.print_line(counts, "total")
+
+    def print_counts(self, counts, filename, file=sys.stdout):
+        """Print counts for a file."""
+        self.print_line(counts, filename, file)
+
+    def print_progress(self, counts, filename):
         """Show progress to stderr if it's a TTY."""
         if not sys.stderr.isatty():
             return
@@ -112,13 +123,10 @@ class WC:
         # Clear current line and move cursor to beginning
         sys.stderr.write("\r\033[K")
         self.print_line(counts, filename, file=sys.stderr)
+        # Move up a line to overwrite next time
+        sys.stderr.write("\033[F")
 
         sys.stderr.flush()
-
-    def print_totals(self, counts):
-        """Print total counts."""
-        if len(self.args.files) > 1:
-            self.print_line(counts, "total")
 
     def handle_error(self, error, filename):
         """Handle file error and report it."""
@@ -131,18 +139,18 @@ class WC:
         self.exit_code = code
         return code
 
-    def get_files(self, args):
+    def get_files(self):
         """
         Get file objects to process based on arguments as a generator.
         UNIX implementation treats '-' as a literal file name.
         """
         # If no files specified, use stdin
-        if not args.files:
+        if not self.args.files:
             yield ("", sys.stdin.buffer)  # Empty name for stdin
             return
 
         # Process each file argument
-        for filename in args.files:
+        for filename in self.args.files:
             try:
                 # Open in binary mode to handle all types of files
                 # In UNIX, '-' is just a regular file name
@@ -161,16 +169,16 @@ class WC:
             args.lines = args.words = args.bytes = True
 
         # Get file generator
-        file_gen = self.get_files(args)
+        file_gen = self.get_files()
 
         # Initialize totals for each count type
-        totals = [0] * len(self.process_line(b"", args))
+        totals = [0] * len(self.process_line(b""))
         for filename, file_obj in file_gen:
             try:
-                counts = self.process_file(filename, file_obj, args)
+                counts = self.process_file(filename, file_obj)
                 totals = [totals[i] + counts[i] for i in range(len(counts))]
 
-                self.print_line(counts, filename)
+                self.print_counts(counts, filename)
             except KeyboardInterrupt:
                 raise
             except Exception as e:
@@ -180,10 +188,10 @@ class WC:
 
         return self.exit_code
 
-    def process_file(self, filename, file_obj, args):
+    def process_file(self, filename, file_obj):
         """Process a file and return (filename, counts)."""
         # Get the empty counts structure to understand what counts we're calculating
-        empty_counts = self.process_line(b"", args)
+        empty_counts = self.process_line(b"")
         file_counts = [0] * len(empty_counts)
 
         # Track timing for progress updates
@@ -192,7 +200,7 @@ class WC:
         # Process file line by line
         for line in file_obj:
             # Process the line
-            line_counts = self.process_line(line, args)
+            line_counts = self.process_line(line)
 
             # Update file counts
             for i, count in enumerate(line_counts):
@@ -201,7 +209,7 @@ class WC:
             # Show progress every ~200ms if stderr is a TTY
             current_time = time.time()
             if current_time - last_update >= 0.2:
-                self.show_progress(file_counts, filename)
+                self.print_progress(file_counts, filename)
                 last_update = current_time
 
         # Clear progress line before returning

@@ -2,10 +2,10 @@
 import argparse
 import sys
 
-from .wc import WC
+from .linux import Linux
 
 
-class GNU(WC):
+class GNU(Linux):
     """
     wc - print newline, word, and byte counts for each file
 
@@ -42,41 +42,22 @@ class GNU(WC):
         parser.add_argument("--lines", action="store_true", dest="lines", help=argparse.SUPPRESS)
         parser.add_argument("--words", action="store_true", dest="words", help=argparse.SUPPRESS)
 
-    def get_files(self, args):
-        """Handle file processing with GNU-specific behavior."""
-        # Handle --files0-from option
+    def get_file_names(self):
+        """Return list of file names from --files0-from or args.files."""
+        args = self.args
         if getattr(args, "files0_from", None):
             try:
                 source = sys.stdin if args.files0_from == "-" else open(args.files0_from, "r")
                 filenames = source.read().split("\0")
-                if source != sys.stdin:
+                if source is not sys.stdin:
                     source.close()
-
-                for filename in filter(None, filenames):
-                    try:
-                        yield (filename, open(filename, "rb"))
-                    except OSError as e:
-                        self.handle_error(e, filename)
-                return
+                return list(filter(None, filenames))
             except Exception as e:
                 self.handle_error(e, args.files0_from)
-                return
+                return []
+        return args.files or [""]
 
-        # Handle regular file arguments or stdin
-        if not args.files:
-            yield ("", sys.stdin.buffer)
-            return
-
-        for filename in args.files:
-            try:
-                if filename == "-":
-                    yield (filename, sys.stdin.buffer)
-                else:
-                    yield (filename, open(filename, "rb"))
-            except OSError as e:
-                self.handle_error(e, filename)
-
-    def print_totals(self, counts):
+    def print_totals(self, counts, file=sys.stdout):
         """Print total counts."""
 
         always_print = self.args.total in ("always", "only")
@@ -85,19 +66,23 @@ class GNU(WC):
         should_print = always_print or (has_files and not never_print)
 
         if should_print:
-            self.print_line(counts, "total")
+            name = "" if self.args.total == "only" else "total"
+            self.print_line(counts, name, file=file)
+
+    def print_counts(self, counts, filename, file=sys.stdout):
+        """Print counts for a file."""
+        if self.args.total == "only":
+            return
+        self.print_line(counts, filename, file)
 
     def print_line(self, counts, filename, file=sys.stdout):
-        """Format output with GNU-specific formatting."""
-        # Handle single count with no leading space (GNU extension)
+        """GNU-specific line printing using width ."""
         if len(counts) == 1:
             output = f"{counts[0]}"
             if filename:
                 output += f" {filename}"
         else:
-            # Standard formatting for multiple counts
-            output = " ".join(f"{count:7d}" for count in counts)
+            output = " ".join(f"{count:{self.column_width}d}" for count in counts)
             if filename:
                 output += f" {filename}"
-
-        print(output, file=file)
+        print(output, file=file, flush=True)

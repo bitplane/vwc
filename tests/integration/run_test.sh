@@ -6,7 +6,8 @@
 # $2 - Output directory
 # $3 - Command to run as wc (either "wc" or "vwc")
 
-TEST_SCRIPT="$1"
+# don't have realpath in POSIX
+TEST_SCRIPT="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 OUTPUT_DIR="$2"
 WC_COMMAND="$3"
 
