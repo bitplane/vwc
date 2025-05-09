@@ -1,5 +1,7 @@
 # src/vwc/wc/gnu.py
 import argparse
+import os
+import stat
 import sys
 
 from .linux import Linux
@@ -45,6 +47,7 @@ class GNU(Linux):
     def get_file_names(self):
         """Return list of file names from --files0-from or args.files."""
         args = self.args
+
         if getattr(args, "files0_from", None):
             try:
                 source = sys.stdin if args.files0_from == "-" else open(args.files0_from, "r")
@@ -55,7 +58,11 @@ class GNU(Linux):
             except Exception as e:
                 self.handle_error(e, args.files0_from)
                 return []
-        return args.files or [""]
+
+        file_names = args.files or [""]
+        self.set_column_width(file_names)
+
+        return file_names
 
     def print_totals(self, file=sys.stdout):
         """Print total counts."""
@@ -88,3 +95,53 @@ class GNU(Linux):
             if filename:
                 output += f" {filename}"
         print(output, file=file, flush=True)
+
+    def set_column_width(self, filenames):
+        """
+        Do the same as compute_number_width in GNU's wc.c
+        """
+        # We aren't reporting on files, so GNU assumes a width of 1 here
+        if hasattr(self.args, "total") and self.args.total == "only":
+            self.column_width = 1
+            return
+
+        # If we don't actually have named files, we assume maximum width
+        if not filenames:
+            self.column_width = 7
+            return
+        else:
+            # otherwise, we will start at 1 and work our way up
+            self.column_width = 1
+
+        total_size = 0
+
+        # loop over files and check their sizes
+        for name in filenames:
+            # hang on, this is stdin.
+            if name == "-" or not name:
+                self.column_width = 7
+                break
+
+            try:
+                st = os.stat(name, follow_symlinks=False)
+            except Exception:
+                # Ignore errors. We don't want to complain about them early.
+                # GNU does this because it's trying to preserve UNIX behaviour.
+                continue
+
+            if not stat.S_ISREG(st.st_mode):
+                # yep, adding a dir to the list will cause GNU wc to use 7 as the column width.
+                # Bug IMO, but we do the same.
+                self.column_width = 7
+                break
+            else:
+                # we have a regular file, and its size is the maximum size we will ever print.
+                # because printing characters can't print a bigger number than that. This is, of course,
+                # incorrect, because
+                total_size += st.st_size
+                new_width = len(str(total_size))
+                self.column_width = max(self.column_width, new_width)
+                if self.column_width >= 7:
+                    # we have a file that is 7 digits long. We can stop now.
+                    self.column_width = 7
+                    break

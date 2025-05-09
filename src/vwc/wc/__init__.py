@@ -1,10 +1,16 @@
 import os
 import platform
+
 from .wc import WC
 
 
 def get_wc() -> WC:
-    """Get the appropriate platform implementation by checking PATH."""
+    """
+    Get the appropriate platform implementation by checking the $PATH.
+
+    We don't use subprocess in here because the project will be flagged as unsafe
+    by security tools. Which is fair.
+    """
     system = platform.system()
 
     if system == "Linux":

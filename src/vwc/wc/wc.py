@@ -190,25 +190,28 @@ class WC:
         self.exit_code = code
         return code
 
+    def get_file_names(self):
+        """Files to process, can be overriden"""
+        return self.args.files or [""]
+
     def get_files(self):
         """
         Get file objects to process based on arguments as a generator.
-        UNIX implementation treats '-' as a literal file name.
         """
-        # If no files specified, use stdin
-        if not self.args.files:
-            yield ("", sys.stdin.buffer)  # Empty name for stdin
-            return
-
+        names = self.get_file_names()
         # Process each file argument
-        for filename in self.args.files:
+        for filename in names:
             try:
-                # Open in binary mode to handle all types of files
-                # In UNIX, '-' is just a regular file name
-                file_obj = open(filename, "rb")
-                yield (filename, file_obj)
+                yield filename, self.open_file(filename)
             except OSError as e:
                 self.handle_error(e, filename)
+
+    def open_file(self, filename):
+        # Open in binary mode to handle all types of files
+        # In UNIX, '-' is just a regular file name
+        if not filename or filename == "-":
+            return sys.stdin.buffer
+        return open(filename, "rb")
 
     def run(self):
         """Process files and print counts."""
