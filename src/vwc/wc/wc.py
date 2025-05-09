@@ -1,14 +1,10 @@
-# src/vwc/wc/wc.py
-"""
-Base class for word count (wc) implementations.
-This is the base UNIX implementation.
-"""
-
 import argparse
 import os
 import platform
 import sys
 import time
+
+import wcwidth
 
 
 class WC:
@@ -24,6 +20,7 @@ class WC:
         self.exit_code = 0
         self.counts = None
         self.totals = None
+        self.column_width = 7  # Default column width
 
     def create_parser(self) -> argparse.ArgumentParser:
         """Create a basic argument parser with core options."""
@@ -51,42 +48,66 @@ class WC:
         """Parse command line arguments"""
         self.args = self.parser.parse_args(argv)
 
+    def get_display_width(self, text):
+        """Calculate the display width of text according to POSIX rules."""
+        # Use wcwidth to calculate display width, handling CJK, emojis, etc.
+        # Expand tabs to 8 spaces as per POSIX standard
+        text_expanded = text.expandtabs(8)
+        width = 0
+
+        # Calculate width character by character
+        for char in text_expanded:
+            # wcwidth returns -1 for control characters, count them as 0
+            char_width = wcwidth.wcwidth(char)
+            if char_width >= 0:
+                width += char_width
+
+        return width
+
     def process_line(self, line):
         """Process a single line and return counts based on requested options."""
         counts = []
 
-        # Only calculate what's needed based on args
+        # Skip processing for empty line (used for initialization)
+        if not line:
+            # Add placeholders for all requested counts
+            if self.args.lines:
+                counts.append(0)
+            if self.args.words:
+                counts.append(0)
+            if self.args.bytes:
+                counts.append(0)
+            if self.args.chars:
+                counts.append(0)
+            if getattr(self.args, "max_line_length", False):
+                counts.append(0)
+            return counts
+
+        # Calculate all requested counts
         if self.args.lines:
             counts.append(1)  # Always 1 line per line
 
+        # Decode for word and character counts
+        try:
+            text = line.decode("utf-8")
+        except UnicodeDecodeError:
+            text = line.decode("latin-1")
+
         if self.args.words:
-            # Only decode and split if we need word count
-            try:
-                text = line.decode("utf-8")
-            except UnicodeDecodeError:
-                text = line.decode("latin-1")
             counts.append(len(text.split()))
 
         if self.args.bytes:
             counts.append(len(line))  # Byte count
 
         if self.args.chars:
-            # Only decode if not already done for words
-            if not self.args.words:
-                try:
-                    text = line.decode("utf-8")
-                except UnicodeDecodeError:
-                    text = line.decode("latin-1")
-            counts.append(len(text))
+            counts.append(len(text))  # Character count
 
         if getattr(self.args, "max_line_length", False):
-            # Only decode if not already done
-            if not (self.args.words or self.args.chars):
-                try:
-                    text = line.decode("utf-8", errors="replace")
-                except UnicodeDecodeError:
-                    text = line.decode("latin-1")
-            counts.append(len(text.strip("\n")))
+            # Strip newline for display width calculation
+            text_no_nl = text.rstrip("\n")
+            # Calculate display width according to POSIX rules
+            display_width = self.get_display_width(text_no_nl)
+            counts.append(display_width)
 
         return counts
 
@@ -174,7 +195,15 @@ class WC:
         for filename, file_obj in file_gen:
             try:
                 counts = self.process_file(filename, file_obj)
-                totals = [totals[i] + counts[i] for i in range(len(counts))]
+
+                # Update totals - for max_line_length, take the max rather than sum
+                has_max_line = getattr(self.args, "max_line_length", False)
+                for i in range(len(counts)):
+                    # For the max_line_length field, take max instead of sum
+                    if has_max_line and i == len(counts) - 1:
+                        totals[i] = max(totals[i], counts[i])
+                    else:
+                        totals[i] += counts[i]
 
                 self.print_counts(counts, filename)
             except KeyboardInterrupt:
@@ -192,6 +221,10 @@ class WC:
         empty_counts = self.process_line(b"")
         file_counts = [0] * len(empty_counts)
 
+        # Flag for max line length position
+        has_max_line = getattr(self.args, "max_line_length", False)
+        max_line_idx = len(file_counts) - 1 if has_max_line else -1
+
         # Track timing for progress updates
         last_update = time.time()
 
@@ -202,7 +235,12 @@ class WC:
 
             # Update file counts
             for i, count in enumerate(line_counts):
-                file_counts[i] += count
+                if has_max_line and i == max_line_idx:
+                    # For max line length, take the maximum
+                    file_counts[i] = max(file_counts[i], count)
+                else:
+                    # For other counts, sum them
+                    file_counts[i] += count
 
             # Show progress every ~200ms if stderr is a TTY
             current_time = time.time()
