@@ -1,6 +1,11 @@
+---
+features: ["asciinema"]
+---
 # 🚻👀 `vwc`
 
 Like `wc`, but with a live preview output to stderr if it's a tty.
+
+![cast](https://bitplane.net/dev/python/vwc/vwc.cast.png)
 
 ## ▶️ installing
 
