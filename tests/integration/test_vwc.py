@@ -16,11 +16,11 @@ def get_test_scripts():
     return [f for f in test_dir.glob("*.sh")]
 
 
-# Get available platforms based on Dockerfiles
+# Get available platforms based on Containerfiles
 def get_platforms():
-    """Get all platforms based on available Dockerfiles"""
-    dockerfile_dir = Path(__file__).parent / "dockerfiles"
-    return [f.name.split(".", 1)[1] for f in dockerfile_dir.glob("Dockerfile.*")]
+    """Get all platforms based on available Containerfiles"""
+    containerfile_dir = Path(__file__).parent / "containerfiles"
+    return [f.name.split(".", 1)[1] for f in containerfile_dir.glob("Containerfile.*")]
 
 
 # Prepare build directory
@@ -35,10 +35,10 @@ def prepare_build_dir():
     subprocess.run([str(script_path)], check=True)
 
 
-# Build Docker image for a platform - only once per session
+# Build Podman image for a platform - only once per session
 @pytest.fixture(scope="session")
-def docker_image_factory(request):
-    """Build Docker images for platforms (only once per session)"""
+def podman_image_factory(request):
+    """Build Podman images for platforms (only once per session)"""
     # Prepare build directory
     prepare_build_dir()
 
@@ -50,19 +50,19 @@ def docker_image_factory(request):
 
         # Use the build directory as context
         build_dir = Path(__file__).parent / "build"
-        dockerfile_path = Path(__file__).parent / "dockerfiles" / f"Dockerfile.{platform}"
+        containerfile_path = Path(__file__).parent / "containerfiles" / f"Containerfile.{platform}"
 
         # Build the image
         image_name = f"vwc-test-{platform}"
 
         result = subprocess.run(
-            ["docker", "build", "-t", image_name, "-f", str(dockerfile_path), str(build_dir)],
+            ["podman", "build", "-t", image_name, "-f", str(containerfile_path), str(build_dir)],
             capture_output=True,
             text=True,
         )
 
         if result.returncode != 0:
-            raise RuntimeError(f"Docker build failed: {result.stderr}")
+            raise RuntimeError(f"Podman build failed: {result.stderr}")
 
         built_images[platform] = image_name
         return image_name
@@ -71,7 +71,7 @@ def docker_image_factory(request):
     def _cleanup():
         for image_name in built_images.values():
             try:
-                subprocess.run(["docker", "rmi", image_name], check=False)
+                subprocess.run(["podman", "rmi", image_name], check=False)
             except Exception:
                 pass
 
@@ -107,7 +107,7 @@ def run_test(image_name, script_path, use_vwc=False):
     # Run the container
     subprocess.run(
         [
-            "docker",
+            "podman",
             "run",
             "--rm",
             # Mount the source directory
@@ -186,10 +186,10 @@ def pytest_generate_tests(metafunc):
 
 
 # Test function
-def test_vwc_integration(script, platform, docker_image_factory):
+def test_vwc_integration(script, platform, podman_image_factory):
     """Test that vwc behaves identically to the platform's native wc"""
-    # Get the Docker image for this platform
-    image_name = docker_image_factory(platform)
+    # Get the Podman image for this platform
+    image_name = podman_image_factory(platform)
 
     # Run with original wc
     wc_output_dir = run_test(image_name, script, use_vwc=False)

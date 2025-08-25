@@ -22,7 +22,7 @@ dev = [
     "twine",
     "ruff",
     "pydoc-markdown",
-    "docker"
+    "podman"
 ]
 
 [project.scripts]

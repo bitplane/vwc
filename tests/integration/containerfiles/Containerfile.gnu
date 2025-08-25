@@ -1,4 +1,4 @@
-# tests/integration/dockerfiles/Dockerfile.gnu
+# tests/integration/containerfiles/Containerfile.gnu
 FROM ubuntu:latest
 
 # Install dependencies
