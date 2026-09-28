@@ -25,7 +25,7 @@ def get_wc() -> WC:
                         from vwc.wc.busybox import BusyBox
 
                         return BusyBox()
-                except (OSError, IOError):
+                except OSError:
                     pass
 
         # Default to GNU on Linux
@@ -33,7 +33,15 @@ def get_wc() -> WC:
 
         return GNU()
 
-    elif system in ("FreeBSD", "OpenBSD", "NetBSD", "Darwin"):
+    elif system == "OpenBSD":
+        from vwc.wc.bsd import OpenBSD
+
+        return OpenBSD()
+    elif system == "NetBSD":
+        from vwc.wc.bsd import NetBSD
+
+        return NetBSD()
+    elif system in ("FreeBSD", "Darwin"):
         from vwc.wc.bsd import BSD
 
         return BSD()
@@ -44,4 +52,4 @@ def get_wc() -> WC:
         return GNU()
 
 
-__all__ = ["get_wc", "WC"]
+__all__ = ["WC", "get_wc"]

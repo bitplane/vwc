@@ -1,5 +1,8 @@
 # tests/integration/containerfiles/Containerfile.gnu
-FROM ubuntu:latest
+FROM debian:trixie-slim
+
+# Keep this reference image on GNU coreutils, regardless of host defaults.
+RUN wc --version | grep -q 'GNU coreutils' && wc --help | grep -q -- '--total'
 
 # Install dependencies
 RUN apt-get update && \

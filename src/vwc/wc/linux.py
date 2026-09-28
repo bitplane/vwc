@@ -23,10 +23,10 @@ class Linux(WC):
         """
         In Linux, print the counts on directories.
         """
-        super().handle_error(error, filename)
         if isinstance(error, IsADirectoryError):
             # Reset counts to zeros for directories
             self.reset_counts()
 
             # Print zero counts for the directory
             self.print_counts(filename)
+        super().handle_error(error, filename)

@@ -2,6 +2,7 @@
 import sys
 
 from .linux import Linux
+from .wc import WC
 
 
 class BusyBox(Linux):
@@ -20,6 +21,31 @@ class BusyBox(Linux):
 
         # BusyBox only supports --help (not -h)
         parser.add_argument("--help", action="help", help="display help and exit")
+
+    def char_width(self, char):
+        # BusyBox wc measures printable ASCII for -L; multibyte characters
+        # do not advance its display column.
+        return 1 if " " <= char <= "~" else 0
+
+    def count_words(self, line, text):
+        words = 0
+        in_word = False
+        for byte in line:
+            if byte in (9, 10, 11, 12, 13, 32):
+                in_word = False
+            elif 33 <= byte <= 126 and not in_word:
+                words += 1
+                in_word = True
+        return words
+
+    def handle_error(self, error, filename):
+        if isinstance(error, IsADirectoryError):
+            # BusyBox writes the diagnostic before the zero-count row.
+            WC.handle_error(self, error, filename)
+            self.reset_counts()
+            self.print_counts(filename)
+        else:
+            super().handle_error(error, filename)
 
     def print_line(self, counts, filename, file=sys.stdout):
         """Format and print count line for a file with BusyBox formatting."""

@@ -4,9 +4,58 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master]
+    branches: [master, "codex/**"]
 
 jobs:
+  freebsd-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compare with FreeBSD wc
+        uses: vmactions/freebsd-vm@v1
+        with:
+          run: |
+            sh scripts/bsd-reference.sh /usr/local/bin/python3.11 pkg install -y python311
+
+  openbsd-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compare with OpenBSD wc
+        uses: vmactions/openbsd-vm@v1
+        with:
+          run: |
+            sh scripts/bsd-reference.sh /usr/local/bin/python3.13 pkg_add python%3.13 py3-pip
+
+  netbsd-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compare with NetBSD wc
+        uses: vmactions/netbsd-vm@v1
+        with:
+          run: |
+            sh scripts/bsd-reference.sh python3.11 /usr/sbin/pkg_add -u python311 py311-pip
+
+  bsd-reference:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      - name: Install local reference test dependencies
+        run: python -m pip install -e . pytest
+      - name: Compare with macOS wc
+        run: |
+          if python -m pytest -q -x tests/test_bsd_contract.py tests/test_local_reference.py > bsd-test.log 2>&1; then
+            cat bsd-test.log
+          else
+            cat bsd-test.log
+            python -c 'import sys; print("::error title=macOS wc reference failure::" + sys.stdin.read()[-6000:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))' < bsd-test.log
+            exit 1
+          fi
+
   build:
 
     runs-on: ubuntu-latest
@@ -25,4 +74,11 @@ jobs:
       - name: Build dev environment
         run: make dev
       - name: Unit tests
-        run: make test
+        run: |
+          if make test > unit-test.log 2>&1; then
+            cat unit-test.log
+          else
+            cat unit-test.log
+            python -c 'import sys; print("::error title=Ubuntu test failure::" + sys.stdin.read()[-6000:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))' < unit-test.log
+            exit 1
+          fi
