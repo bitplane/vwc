@@ -63,6 +63,16 @@ class GNU(Linux):
             return self.count_c_words(line)
         return len(text.split())
 
+    def accelerated_word_mode(self):
+        if not hasattr(self, "legacy_word_count"):
+            version = self.native_gnu_version()
+            self.legacy_word_count = version is not None and version < (9, 5)
+        if codecs.lookup(self.encoding).name == "ascii":
+            return "gnu_legacy_c" if self.legacy_word_count else "gnu_c"
+        if codecs.lookup(self.encoding).name == "utf-8":
+            return "unicode_ignore" if self.legacy_word_count else "unicode"
+        return None
+
     @staticmethod
     def native_gnu_version():
         """Query the installed wc once; GNU changed invalid-byte word counts in 9.5."""
