@@ -104,3 +104,105 @@ class BSD(WC):
             output += f" {filename}"
 
         print(output, file=file, flush=True)
+
+
+class NetBSD(BSD):
+    """NetBSD wc reports malformed multibyte input and prints failed reads."""
+
+    def process_line(self, line):
+        if (self.args.words or self.args.chars or self.args.max_line_length) and codecs.lookup(
+            self.encoding
+        ).name != "ascii":
+            decoded = line.decode(self.encoding, errors="surrogateescape")
+            invalid = sum(0xDC80 <= ord(char) <= 0xDCFF for char in decoded)
+            if invalid:
+                exe = os.path.basename(sys.argv[0])
+                filename = getattr(self, "current_filename", "")
+                for _ in range(invalid):
+                    sys.stderr.write(f"{exe}: {filename}: invalid byte sequence\n")
+                self.set_status(1)
+        WC.process_line(self, line)
+
+    def count_chars(self, line, text):
+        if codecs.lookup(self.encoding).name == "ascii":
+            return len(line)
+        return sum(not 0xDC80 <= ord(char) <= 0xDCFF for char in text)
+
+    def count_words(self, line, text):
+        return len("".join(char for char in text if not 0xDC80 <= ord(char) <= 0xDCFF).split())
+
+    def line_width(self, line, text):
+        if not line.endswith(b"\n"):
+            return 0
+        return sum(not 0xDC80 <= ord(char) <= 0xDCFF for char in text.removesuffix("\n"))
+
+    def handle_error(self, error, filename):
+        if isinstance(error, IsADirectoryError):
+            self.reset_counts()
+            if self.args.bytes and not (
+                self.args.lines or self.args.words or self.args.chars or self.args.max_line_length
+            ):
+                self.bytes = os.stat(filename).st_size
+                self.print_counts(filename)
+                self.update_totals()
+                return
+            self.handle_read_error(error, filename)
+            return
+        exe = os.path.basename(sys.argv[0])
+        sys.stderr.write(f"{exe}: {filename}: {error.strerror}\n")
+        self.set_status(1)
+
+    def handle_read_error(self, error, filename):
+        exe = os.path.basename(sys.argv[0])
+        sys.stderr.write(f"{exe}: {filename}: {error.strerror}\n")
+        self.set_status(1)
+        self.print_counts(filename)
+        self.update_totals()
+
+
+class OpenBSD(BSD):
+    """OpenBSD wc uses byte words unless -m and supports -h instead of -L."""
+
+    def add_platform_args(self, parser):
+        parser.add_argument("-h", action="store_true", dest="human", help="print human-readable counts")
+
+    def parse_args(self, argv):
+        WC.parse_args(self, argv)
+        self.multibyte = any("m" in token[1:] for token in argv if token.startswith("-") and token != "-")
+        if self.args.bytes or self.args.chars:
+            self.args.chars = True
+            self.args.bytes = False
+
+    def process_line(self, line):
+        WC.process_line(self, line)
+
+    def count_words(self, line, text):
+        if self.multibyte and codecs.lookup(self.encoding).name != "ascii":
+            return len(text.split())
+        return len(line.split())
+
+    def count_chars(self, line, text):
+        if self.multibyte and codecs.lookup(self.encoding).name != "ascii":
+            return len(text)
+        return len(line)
+
+    def handle_error(self, error, filename):
+        if isinstance(error, IsADirectoryError):
+            self.reset_counts()
+            if self.args.chars and not (self.args.lines or self.args.words) and not self.multibyte:
+                self.chars = os.stat(filename).st_size
+                self.print_counts(filename)
+                self.update_totals()
+                return
+            self.handle_read_error(error, filename)
+            return
+        exe = os.path.basename(sys.argv[0])
+        sys.stderr.write(f"{exe}: {filename}: {error.strerror}\n")
+        self.set_status(1)
+
+    def handle_read_error(self, error, filename):
+        exe = os.path.basename(sys.argv[0])
+        sys.stderr.write(f"{exe}: {filename or '(stdin)'}: {error.strerror}\n")
+        self.set_status(1)
+        self.print_counts(filename)
+        self.update_totals()

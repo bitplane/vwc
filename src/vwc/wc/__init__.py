@@ -33,7 +33,15 @@ def get_wc() -> WC:
 
         return GNU()
 
-    elif system in ("FreeBSD", "OpenBSD", "NetBSD", "Darwin"):
+    elif system == "OpenBSD":
+        from vwc.wc.bsd import OpenBSD
+
+        return OpenBSD()
+    elif system == "NetBSD":
+        from vwc.wc.bsd import NetBSD
+
+        return NetBSD()
+    elif system in ("FreeBSD", "Darwin"):
         from vwc.wc.bsd import BSD
 
         return BSD()

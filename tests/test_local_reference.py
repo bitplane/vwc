@@ -33,6 +33,8 @@ HOST_IS_GNU = subprocess.run(["wc", "--version"], capture_output=True, check=Fal
 )
 @pytest.mark.parametrize("flag", ["-l", "-w", "-c", "-m", "-L"])
 def test_host_counting(data, flag):
+    if sys.platform.startswith("openbsd") and flag == "-L":
+        pytest.skip("OpenBSD wc does not support -L")
     if data == b"\xc3\xa9\xff\n" and flag == "-m" and not HOST_IS_GNU:
         pytest.skip("host wc uses different invalid-byte character counting")
     operands = [] if sys.platform.startswith(("darwin", "freebsd", "openbsd", "netbsd")) else ["-"]
@@ -171,6 +173,12 @@ def test_existing_scripts_locally(tmp_path, script, reference):
         pytest.skip("BusyBox is not installed")
     if script.stem in {"gnu_options", "gnu_encoding"} and reference == "wc" and not HOST_IS_GNU:
         pytest.skip("GNU reference script requires GNU wc")
+    if (
+        sys.platform.startswith("openbsd")
+        and reference == "wc"
+        and script.stem in {"max_line_len_combo", "max_line_len_multi", "max_line_len_one", "multibyte"}
+    ):
+        pytest.skip("OpenBSD wc does not support -L")
 
     native_bin = tmp_path / "native_bin"
     vwc_bin = tmp_path / "vwc_bin"
