@@ -14,11 +14,8 @@ jobs:
       - name: Compare with FreeBSD wc
         uses: vmactions/freebsd-vm@v1
         with:
-          prepare: pkg install -y python311 py311-pip
           run: |
-            python3.11 -m venv /tmp/vwc-venv
-            /tmp/vwc-venv/bin/python -m pip install -e . pytest
-            /tmp/vwc-venv/bin/python -m pytest -q -x tests/test_local_reference.py
+            sh scripts/bsd-reference.sh python3.11 pkg install -y python311 py311-pip
 
   openbsd-reference:
     runs-on: ubuntu-latest
@@ -27,11 +24,8 @@ jobs:
       - name: Compare with OpenBSD wc
         uses: vmactions/openbsd-vm@v1
         with:
-          prepare: pkg_add python%3.11 py3-pip
           run: |
-            python3.11 -m venv /tmp/vwc-venv
-            /tmp/vwc-venv/bin/python -m pip install -e . pytest
-            /tmp/vwc-venv/bin/python -m pytest -q -x tests/test_local_reference.py
+            sh scripts/bsd-reference.sh python3.11 pkg_add python%3.11 py3-pip
 
   netbsd-reference:
     runs-on: ubuntu-latest
@@ -40,11 +34,8 @@ jobs:
       - name: Compare with NetBSD wc
         uses: vmactions/netbsd-vm@v1
         with:
-          prepare: /usr/sbin/pkg_add -u python311 py311-pip
           run: |
-            python3.11 -m venv /tmp/vwc-venv
-            /tmp/vwc-venv/bin/python -m pip install -e . pytest
-            /tmp/vwc-venv/bin/python -m pytest -q -x tests/test_local_reference.py
+            sh scripts/bsd-reference.sh python3.11 /usr/sbin/pkg_add -u python311 py311-pip
 
   bsd-reference:
     runs-on: macos-latest
