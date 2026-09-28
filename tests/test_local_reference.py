@@ -148,6 +148,15 @@ def test_total_only_has_no_padding(tmp_path):
     assert actual.stdout == reference.stdout
 
 
+@pytest.mark.skipif(not sys.platform.startswith("openbsd"), reason="OpenBSD-specific option")
+@pytest.mark.parametrize("size", [0, 1, 1023, 1024, 1536, 102400, 1048576])
+def test_openbsd_human_counts(size):
+    data = b"x" * size
+    reference = subprocess.run(["wc", "-hc"], input=data, capture_output=True, check=True)
+    actual = subprocess.run([*VWC, "-hc"], input=data, capture_output=True, check=True)
+    assert actual.stdout == reference.stdout
+
+
 @pytest.mark.parametrize("option", ["-z", "--nonsense"])
 def test_invalid_option_uses_native_error_status(option):
     reference = subprocess.run(["wc", option], capture_output=True, check=False)

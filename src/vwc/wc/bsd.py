@@ -167,6 +167,16 @@ class OpenBSD(BSD):
         parser.add_argument("-h", action="store_true", dest="human", help="print human-readable counts")
 
     def parse_args(self, argv):
+        for token in argv:
+            if token == "--":
+                break
+            if token.startswith("-") and token != "-":
+                for option in token[1:]:
+                    if option not in "clwmh":
+                        exe = os.path.basename(sys.argv[0])
+                        sys.stderr.write(f"{exe}: unknown option -- {option}\n")
+                        sys.stderr.write("usage: wc [-c | -m] [-hlw] [file ...]\n")
+                        raise SystemExit(1)
         WC.parse_args(self, argv)
         self.multibyte = any("m" in token[1:] for token in argv if token.startswith("-") and token != "-")
         if self.args.bytes or self.args.chars:
@@ -185,6 +195,37 @@ class OpenBSD(BSD):
         if self.multibyte and codecs.lookup(self.encoding).name != "ascii":
             return len(text)
         return len(line)
+
+    @staticmethod
+    def format_scaled(count):
+        # OpenBSD's fmt_scaled(3) uses one decimal below 100 units, then
+        # rounds to an integer. All wc counts are nonnegative.
+        suffixes = "BKMGTPE"
+        unit = 0
+        while count >= 1024 ** (unit + 1) and unit < len(suffixes) - 1:
+            unit += 1
+        scale = 1024**unit
+        whole = count // scale
+        fraction = 0 if unit == 0 else ((count % scale) // (scale // 1024) * 10 + 512) // 1024
+        if fraction >= 10:
+            whole += 1
+            fraction = 0
+        if whole == 0:
+            return "0B"
+        if unit == 0 or whole >= 100:
+            if fraction >= 5:
+                whole += 1
+            return f"{whole}{suffixes[unit]}"
+        return f"{whole}.{fraction}{suffixes[unit]}"
+
+    def print_line(self, counts, filename, file=sys.stdout):
+        if self.args.human:
+            output = "".join(f"{self.format_scaled(count):>7}" for count in counts)
+            if filename:
+                output += f" {filename}"
+            print(output, file=file, flush=True)
+            return
+        super().print_line(counts, filename, file)
 
     def handle_error(self, error, filename):
         if isinstance(error, IsADirectoryError):
