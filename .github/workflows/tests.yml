@@ -7,6 +7,32 @@ on:
     branches: [master, "codex/**"]
 
 jobs:
+  bsd-vm-reference:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: freebsd
+            package-command: pkg install -y python311 py311-pip
+            python: python3.11
+          - system: openbsd
+            package-command: pkg_add python%3.11 py3-pip
+            python: python3.11
+          - system: netbsd
+            package-command: /usr/sbin/pkg_add -u python311 py311-pip
+            python: python3.11
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compare with native ${{ matrix.system }} wc
+        uses: vmactions/${{ matrix.system }}-vm@v1
+        with:
+          prepare: ${{ matrix.package-command }}
+          run: |
+            ${{ matrix.python }} -m venv /tmp/vwc-venv
+            /tmp/vwc-venv/bin/python -m pip install -e . pytest
+            /tmp/vwc-venv/bin/python -m pytest -q -x tests/test_local_reference.py
+
   bsd-reference:
     runs-on: macos-latest
     steps:

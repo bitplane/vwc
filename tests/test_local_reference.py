@@ -35,7 +35,7 @@ HOST_IS_GNU = subprocess.run(["wc", "--version"], capture_output=True, check=Fal
 def test_host_counting(data, flag):
     if data == b"\xc3\xa9\xff\n" and flag == "-m" and not HOST_IS_GNU:
         pytest.skip("host wc uses different invalid-byte character counting")
-    operands = [] if sys.platform == "darwin" else ["-"]
+    operands = [] if sys.platform.startswith(("darwin", "freebsd", "openbsd", "netbsd")) else ["-"]
     reference = subprocess.run(["wc", flag, *operands], input=data, capture_output=True, check=True)
     actual = subprocess.run([*VWC, flag, *operands], input=data, capture_output=True, check=True)
     assert actual.stdout == reference.stdout
