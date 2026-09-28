@@ -18,7 +18,7 @@ jobs:
         run: python -m pip install -e . pytest
       - name: Compare with macOS wc
         run: |
-          if python -m pytest -q tests/test_bsd_contract.py tests/test_local_reference.py > bsd-test.log 2>&1; then
+          if python -m pytest -q -x tests/test_bsd_contract.py tests/test_local_reference.py > bsd-test.log 2>&1; then
             cat bsd-test.log
           else
             cat bsd-test.log

@@ -35,8 +35,20 @@ HOST_IS_GNU = subprocess.run(["wc", "--version"], capture_output=True, check=Fal
 def test_host_counting(data, flag):
     if data == b"\xc3\xa9\xff\n" and flag == "-m" and not HOST_IS_GNU:
         pytest.skip("host wc uses different invalid-byte character counting")
-    reference = subprocess.run(["wc", flag, "-"], input=data, capture_output=True, check=True)
-    actual = subprocess.run([*VWC, flag, "-"], input=data, capture_output=True, check=True)
+    operands = [] if sys.platform == "darwin" else ["-"]
+    reference = subprocess.run(["wc", flag, *operands], input=data, capture_output=True, check=True)
+    actual = subprocess.run([*VWC, flag, *operands], input=data, capture_output=True, check=True)
+    assert actual.stdout == reference.stdout
+
+
+@pytest.mark.skipif(not HOST_IS_GNU, reason="host wc is not GNU coreutils")
+@pytest.mark.parametrize("locale_name", ["C", "C.UTF-8"])
+def test_gnu_invalid_byte_word_count_follows_installed_version(locale_name):
+    env = os.environ.copy()
+    env["LC_ALL"] = locale_name
+    data = b"\xff\n"
+    reference = subprocess.run(["wc", "-w", "-"], input=data, capture_output=True, check=True, env=env)
+    actual = subprocess.run([*VWC, "-w", "-"], input=data, capture_output=True, check=True, env=env)
     assert actual.stdout == reference.stdout
 
 

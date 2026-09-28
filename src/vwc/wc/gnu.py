@@ -2,7 +2,9 @@
 import argparse
 import codecs
 import os
+import re
 import stat
+import subprocess
 import sys
 
 from .linux import Linux
@@ -51,10 +53,32 @@ class GNU(Linux):
         return len(line.decode(self.encoding, errors="ignore"))
 
     def count_words(self, line, text):
+        if not hasattr(self, "legacy_word_count"):
+            version = self.native_gnu_version()
+            self.legacy_word_count = version is not None and version < (9, 5)
+        if self.legacy_word_count:
+            return len(line.decode(self.encoding, errors="ignore").split())
         if codecs.lookup(self.encoding).name == "ascii":
-            # GNU treats 0xa0 as whitespace even in the C locale.
+            # Modern GNU treats 0xa0 as whitespace even in the C locale.
             return self.count_c_words(line)
         return len(text.split())
+
+    @staticmethod
+    def native_gnu_version():
+        """Query the installed wc once; GNU changed invalid-byte word counts in 9.5."""
+        own_executable = os.path.realpath(sys.argv[0])
+        for directory in os.environ.get("PATH", "").split(os.pathsep):
+            candidate = os.path.join(directory or ".", "wc")
+            if not os.access(candidate, os.X_OK) or os.path.realpath(candidate) == own_executable:
+                continue
+            try:
+                result = subprocess.run([candidate, "--version"], capture_output=True, timeout=2, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            match = re.search(rb"wc \(GNU coreutils\) (\d+)\.(\d+)", result.stdout)
+            if match:
+                return int(match[1]), int(match[2])
+        return None
 
     @staticmethod
     def count_c_words(line):
