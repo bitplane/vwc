@@ -15,6 +15,14 @@ $ echo "hey" | vwc -l
 1
 ```
 
+For faster counting of large streams, install the optional Numba scanner:
+
+```bash
+pipx install 'vwc[fast]'
+```
+
+The scanner handles line, word, and byte counts in chunks, so progress can appear while a stream contains a very long line. Character and maximum-line-length counts continue through the regular path.
+
 ## ✅ To Do
 
 - [x] Detect platform and mirror it

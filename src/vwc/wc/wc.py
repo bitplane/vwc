@@ -5,9 +5,12 @@ This is the base UNIX implementation.
 """
 
 import argparse
+import codecs
+import importlib.util
 import locale
 import os
 import platform
+import stat
 import sys
 import time
 
@@ -320,6 +323,12 @@ class WC:
         # Reset counts for this file
         self.reset_counts()
 
+        if self.use_accelerated_scan(file_obj):
+            self.process_file_accelerated(filename, file_obj)
+            if filename and file_obj != sys.stdin.buffer:
+                file_obj.close()
+            return
+
         # Track timing for progress updates
         last_update = time.time()
 
@@ -342,3 +351,111 @@ class WC:
         # Close file if not stdin
         if filename and file_obj != sys.stdin.buffer:
             file_obj.close()
+
+    def accelerated_word_mode(self):
+        """Return the byte word rule, or None when word counting needs the line path."""
+
+    def use_accelerated_scan(self, file_obj):
+        if self.args.chars or getattr(self.args, "max_line_length", False):
+            return False
+        try:
+            source = os.fstat(file_obj.fileno())
+        except (AttributeError, OSError):
+            return False
+        if stat.S_ISREG(source.st_mode) and source.st_size < 4 * 1024 * 1024:
+            return False
+        if not self.args.words:
+            return True
+        if importlib.util.find_spec("numba") is None:
+            return False
+        return self.accelerated_word_mode() is not None
+
+    def process_file_accelerated(self, filename, file_obj):
+        """Count fixed-size chunks so even a very long line can show progress."""
+        mode = self.accelerated_word_mode() if self.args.words else None
+        byte_mode = mode in ("gnu_c", "gnu_legacy_c", "busybox", "openbsd")
+        decoder = None
+        if self.args.words and not byte_mode:
+            errors = "ignore" if mode == "unicode_ignore" else "surrogateescape"
+            decoder = codecs.getincrementaldecoder(self.encoding)(errors=errors)
+
+        read_chunk = getattr(file_obj, "read1", file_obj.read)
+        use_numba = self.args.words and stat.S_ISREG(os.fstat(file_obj.fileno()).st_mode)
+        accelerated = None
+        bytes_seen = 0
+        in_word = False
+        last_update = time.monotonic()
+        while chunk := read_chunk(1024 * 1024):
+            bytes_seen += len(chunk)
+            if self.args.bytes:
+                self.bytes += len(chunk)
+
+            scanned_lines = None
+            if self.args.words:
+                if not use_numba and bytes_seen >= 4 * 1024 * 1024:
+                    use_numba = True
+                if use_numba and accelerated is None:
+                    from . import accelerated as scanner
+
+                    accelerated = scanner
+                if use_numba and (byte_mode or (chunk.isascii() and not decoder.getstate()[0])):
+                    modes = {
+                        "gnu_c": accelerated.GNU_C,
+                        "gnu_legacy_c": accelerated.GNU_LEGACY_C,
+                        "busybox": accelerated.BUSYBOX,
+                        "openbsd": accelerated.OPENBSD,
+                    }
+                    scan_mode = modes[mode] if byte_mode else accelerated.UNICODE_ASCII
+                    scanned_lines, words, in_word = accelerated.scan(chunk, in_word, scan_mode, True)
+                    self.words += words
+                elif byte_mode:
+                    words, in_word = self.count_byte_words(chunk, in_word, mode)
+                    self.words += words
+                else:
+                    text = decoder.decode(chunk)
+                    count, in_word = self.count_decoded_words(text, in_word)
+                    self.words += count
+            if self.args.lines:
+                self.lines += scanned_lines if scanned_lines is not None else chunk.count(b"\n")
+
+            now = time.monotonic()
+            if now - last_update >= 0.2:
+                self.print_progress(filename)
+                last_update = now
+
+        if decoder is not None:
+            count, _ = self.count_decoded_words(decoder.decode(b"", final=True), in_word)
+            self.words += count
+        if sys.stderr.isatty():
+            sys.stderr.write("\r\033[K")
+            sys.stderr.flush()
+
+    @staticmethod
+    def count_byte_words(chunk, in_word, mode):
+        words = 0
+        for byte in chunk:
+            space = byte in (9, 10, 11, 12, 13, 32)
+            if mode == "gnu_legacy_c" and byte >= 128:
+                continue
+            if mode == "gnu_c":
+                space = space or byte == 160
+            elif mode == "gnu_legacy_c":
+                space = space or 28 <= byte <= 31
+            if space:
+                in_word = False
+            elif mode == "busybox" and not 33 <= byte <= 126:
+                continue
+            elif not in_word:
+                words += 1
+                in_word = True
+        return words, in_word
+
+    @staticmethod
+    def count_decoded_words(text, in_word):
+        if not text:
+            return 0, in_word
+        parts = text.split()
+        count = len(parts)
+        if count and in_word and not text[0].isspace():
+            count -= 1
+        return count, not text[-1].isspace()

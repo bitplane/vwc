@@ -59,6 +59,11 @@ class BSD(WC):
         # BSD's mbrtowc loop leaves an incomplete sequence at EOF uncounted.
         return len(decoder.decode(line, final=False))
 
+    def accelerated_word_mode(self):
+        if codecs.lookup(self.encoding).name in ("ascii", "utf-8"):
+            return "unicode"
+        return None
+
     def handle_error(self, error, filename):
         if isinstance(error, IsADirectoryError):
             # Python rejects the directory during open; BSD open succeeds and
@@ -112,6 +117,9 @@ class NetBSD(BSD):
     def process_file(self, filename, file_obj):
         self.current_filename = filename or "<stdin>"
         WC.process_file(self, filename, file_obj)
+
+    def accelerated_word_mode(self):
+        return None
 
     def process_line(self, line):
         if (self.args.words or self.args.chars or self.args.max_line_length) and codecs.lookup(
@@ -207,6 +215,11 @@ class OpenBSD(BSD):
         if self.multibyte and codecs.lookup(self.encoding).name != "ascii":
             return len(text.split())
         return len(line.split())
+
+    def accelerated_word_mode(self):
+        if not self.multibyte:
+            return "openbsd"
+        return None
 
     def count_chars(self, line, text):
         if self.multibyte and codecs.lookup(self.encoding).name != "ascii":

@@ -13,6 +13,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+fast = [
+    "numba>=0.67,<0.68",
+]
 dev = [
     "pre-commit",
     "pytest",

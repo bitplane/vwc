@@ -38,6 +38,9 @@ class BusyBox(Linux):
                 in_word = True
         return words
 
+    def accelerated_word_mode(self):
+        return "busybox"
+
     def handle_error(self, error, filename):
         if isinstance(error, IsADirectoryError):
             # BusyBox writes the diagnostic before the zero-count row.
