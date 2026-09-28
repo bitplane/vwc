@@ -61,7 +61,7 @@ def test_bsd_c_locale_invalid_bytes(flag):
 
 
 @pytest.mark.skipif(sys.platform.startswith("linux"), reason="BSD locale comparison")
-@pytest.mark.parametrize("data", [b"a\xc2\xa0b\n", b"a\xff b\n"])
+@pytest.mark.parametrize("data", [b"a\xc2\xa0b\n", b"a\xff b\n", b"a\xc3", b"a\xff\xfe b\n"])
 @pytest.mark.parametrize("flag", ["-w", "-m", "-L"])
 def test_bsd_utf8_locale(data, flag):
     if sys.platform.startswith("openbsd") and flag == "-L":
