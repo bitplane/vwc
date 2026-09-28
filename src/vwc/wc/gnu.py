@@ -1,5 +1,6 @@
 # src/vwc/wc/gnu.py
 import argparse
+import codecs
 import os
 import stat
 import sys
@@ -44,31 +45,89 @@ class GNU(Linux):
         parser.add_argument("--lines", action="store_true", dest="lines", help=argparse.SUPPRESS)
         parser.add_argument("--words", action="store_true", dest="words", help=argparse.SUPPRESS)
 
+    def count_chars(self, line, text):
+        if codecs.lookup(self.encoding).name == "ascii":
+            return len(line)
+        return len(line.decode(self.encoding, errors="ignore"))
+
+    def count_words(self, line, text):
+        if codecs.lookup(self.encoding).name == "ascii":
+            # GNU treats 0xa0 as whitespace even in the C locale.
+            return self.count_c_words(line)
+        return len(text.split())
+
+    @staticmethod
+    def count_c_words(line):
+        in_word = False
+        words = 0
+        for byte in line:
+            if byte in (9, 10, 11, 12, 13, 32, 160):
+                in_word = False
+            elif not in_word:
+                words += 1
+                in_word = True
+        return words
+
     def get_file_names(self):
         """Return list of file names from --files0-from or args.files."""
         args = self.args
+        self.file_source_error = False
 
-        if getattr(args, "files0_from", None):
+        if args.files0_from is not None:
             try:
-                source = sys.stdin if args.files0_from == "-" else open(args.files0_from, "r")
-                filenames = source.read().split("\0")
-                if source is not sys.stdin:
-                    source.close()
-                return list(filter(None, filenames))
-            except Exception as e:
-                self.handle_error(e, args.files0_from)
+                if args.files:
+                    exe = os.path.basename(sys.argv[0])
+                    sys.stderr.write(
+                        f"{exe}: extra operand '{args.files[0]}'\n"
+                        "file operands cannot be combined with --files0-from\n"
+                        f"Try '{exe} --help' for more information.\n"
+                    )
+                    raise SystemExit(1)
+                if args.files0_from == "-":
+                    data = sys.stdin.buffer.read()
+                else:
+                    with open(args.files0_from, "rb") as source:
+                        data = source.read()
+                raw_names = data.split(b"\0")
+                if not data or data.endswith(b"\0"):
+                    raw_names.pop()
+                filenames = [os.fsdecode(name) if name else None for name in raw_names]
+                self.file_count = len(filenames)
+                self.set_column_width(filenames)
+                return filenames
+            except OSError as e:
+                exe = os.path.basename(sys.argv[0])
+                sys.stderr.write(f"{exe}: cannot open '{args.files0_from}' for reading: {e.strerror}\n")
+                self.set_status(1)
+                self.file_source_error = True
                 return []
 
         file_names = args.files or [""]
+        self.file_count = len(file_names)
         self.set_column_width(file_names)
 
         return file_names
 
+    def handle_empty_name(self, index):
+        exe = os.path.basename(sys.argv[0])
+        sys.stderr.write(f"{exe}: {self.args.files0_from}:{index}: invalid zero-length file name\n")
+        self.set_status(1)
+
+    def validate_filename(self, filename):
+        if self.args.files0_from == "-" and filename == "-":
+            exe = os.path.basename(sys.argv[0])
+            sys.stderr.write(f"{exe}: when reading file names from stdin, no file name of '-' allowed\n")
+            self.set_status(1)
+            return False
+        return True
+
     def print_totals(self, file=sys.stdout):
         """Print total counts."""
+        if self.file_source_error:
+            return
         always_print = self.args.total in ("always", "only")
         never_print = self.args.total == "never"
-        has_files = len(self.args.files) > 1
+        has_files = self.file_count > 1
         should_print = always_print or (has_files and not never_print)
 
         if should_print:
@@ -102,7 +161,7 @@ class GNU(Linux):
 
         # If we don't actually have named files, we assume maximum width
         if not filenames:
-            self.column_width = 7
+            self.column_width = 1
             return
         else:
             # otherwise, we will start at 1 and work our way up
@@ -112,6 +171,8 @@ class GNU(Linux):
 
         # loop over files and check their sizes
         for name in filenames:
+            if name is None:
+                continue
             # hang on, this is stdin.
             if name == "-" or not name:
                 self.column_width = 7
@@ -119,7 +180,7 @@ class GNU(Linux):
 
             try:
                 st = os.stat(name, follow_symlinks=False)
-            except Exception:
+            except OSError:
                 # Ignore errors. We don't want to complain about them early.
                 # GNU does this because it's trying to preserve UNIX behaviour.
                 continue
@@ -149,7 +210,7 @@ class GNU(Linux):
         totals_only = hasattr(self.args, "total") and self.args.total == "only"
         columns = ("lines", "words", "bytes", "chars", "max_line_length")
         column_count = sum(1 for arg in columns if hasattr(self.args, arg) and getattr(self.args, arg))
-        has_multiple_files = len(self.args.files) > 1
+        has_multiple_files = self.file_count > 1
 
-        # GNU uses padding for totals_only, or follows the Linux rules
-        return totals_only or column_count > 1 or has_multiple_files
+        # GNU's totals-only row has no column padding.
+        return not totals_only and (column_count > 1 or has_multiple_files)

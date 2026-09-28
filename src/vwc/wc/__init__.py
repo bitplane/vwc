@@ -25,7 +25,7 @@ def get_wc() -> WC:
                         from vwc.wc.busybox import BusyBox
 
                         return BusyBox()
-                except (OSError, IOError):
+                except OSError:
                     pass
 
         # Default to GNU on Linux
@@ -44,4 +44,4 @@ def get_wc() -> WC:
         return GNU()
 
 
-__all__ = ["get_wc", "WC"]
+__all__ = ["WC", "get_wc"]

@@ -5,12 +5,20 @@ This is the base UNIX implementation.
 """
 
 import argparse
+import locale
 import os
 import platform
 import sys
 import time
 
 import wcwidth
+
+
+class WCArgumentParser(argparse.ArgumentParser):
+    def exit(self, status=0, message=None):
+        # All supported native wc implementations use status 1 for an
+        # invalid command line; argparse uses 2 by default.
+        super().exit(1 if status == 2 else status, message)
 
 
 class WC:
@@ -34,7 +42,7 @@ class WC:
 
     def create_parser(self) -> argparse.ArgumentParser:
         """Create a basic argument parser with core options."""
-        parser = argparse.ArgumentParser(
+        parser = WCArgumentParser(
             description=self.__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, add_help=False
         )
         # Core options common to all wc implementations
@@ -60,19 +68,26 @@ class WC:
 
     def get_display_width(self, text):
         """Calculate the display width of text according to POSIX rules."""
-        # Use wcwidth to calculate display width, handling CJK, emojis, etc.
-        # Expand tabs to 8 spaces as per POSIX standard
-        text_expanded = text.expandtabs(8)
         width = 0
+        maximum = 0
+        for char in text:
+            if char == "\t":
+                width = (width // 8 + 1) * 8
+            elif char in ("\r", "\f"):
+                maximum = max(maximum, width)
+                width = 0
+            else:
+                # Invalid bytes decoded with surrogateescape have no display width.
+                char_width = self.char_width(char)
+                if char_width >= 0:
+                    width += char_width
+            maximum = max(maximum, width)
+        return maximum
 
-        # Calculate width character by character
-        for char in text_expanded:
-            # wcwidth returns -1 for control characters, count them as 0
-            char_width = wcwidth.wcwidth(char)
-            if char_width >= 0:
-                width += char_width
-
-        return width
+    def char_width(self, char):
+        if 0xDC80 <= ord(char) <= 0xDCFF:
+            return 0
+        return wcwidth.wcwidth(char)
 
     def reset_counts(self):
         """Reset file-specific counts."""
@@ -96,28 +111,35 @@ class WC:
         if self.args.lines:
             self.lines += line.count(b"\n")
 
-        # Decode for word and character counts
-        try:
-            text = line.decode("utf-8")
-        except UnicodeDecodeError:
-            text = line.decode("latin-1")
+        # A bad byte must not change the interpretation of valid characters
+        # elsewhere in the line. Surrogateescape preserves one character per
+        # invalid byte, like the native counters used for this platform.
+        text = None
+        if self.args.words or self.args.chars or getattr(self.args, "max_line_length", False):
+            text = line.decode(self.encoding, errors="surrogateescape")
 
         if self.args.words:
-            self.words += len(text.split())
+            self.words += self.count_words(line, text)
 
         if self.args.bytes:
             self.bytes += len(line)
 
         if self.args.chars:
-            self.chars += len(text)
+            self.chars += self.count_chars(line, text)
 
         if getattr(self.args, "max_line_length", False):
-            # Strip newline for display width calculation
-            text_no_nl = text.rstrip("\n")
-            # Calculate display width according to POSIX rules
-            display_width = self.get_display_width(text_no_nl)
+            display_width = self.line_width(line, text)
             # Update max_width if this line is longer
             self.max_width = max(self.max_width, display_width)
+
+    def count_words(self, line, text):
+        return len(text.split())
+
+    def count_chars(self, line, text):
+        return len(text)
+
+    def line_width(self, line, text):
+        return self.get_display_width(text.removesuffix("\n"))
 
     def get_counts_array(self, use_totals=False):
         """Get current counts as an array in the standard order."""
@@ -199,12 +221,24 @@ class WC:
         Get file objects to process based on arguments as a generator.
         """
         names = self.get_file_names()
+        self.file_count = len(names)
         # Process each file argument
-        for filename in names:
+        for index, filename in enumerate(names, 1):
+            if filename is None:
+                self.handle_empty_name(index)
+                continue
+            if not self.validate_filename(filename):
+                continue
             try:
                 yield filename, self.open_file(filename)
             except OSError as e:
                 self.handle_error(e, filename)
+
+    def handle_empty_name(self, index):
+        raise ValueError("empty file name is unsupported on this platform")
+
+    def validate_filename(self, filename):
+        return True
 
     def open_file(self, filename):
         # Open in binary mode to handle all types of files
@@ -217,6 +251,21 @@ class WC:
         """Process files and print counts."""
         self.exit_code = 0
         args = self.args
+        if getattr(args, "version", False):
+            from importlib.metadata import version
+
+            print(f"vwc {version('vwc')}")
+            return 0
+        # Python may silently coerce an inherited C locale to C.UTF-8 at
+        # startup. Native wc still sees C, so restore it for counting.
+        coerced_c = (
+            sys.flags.utf8_mode
+            and os.environ.get("LC_CTYPE") == "C.UTF-8"
+            and os.environ.get("LANG") in (None, "C", "POSIX")
+            and not os.environ.get("LC_ALL")
+        )
+        locale.setlocale(locale.LC_CTYPE, "C" if coerced_c else "")
+        self.encoding = locale.nl_langinfo(locale.CODESET)
 
         # If no options specified, show default set (lines, words, bytes)
         if not (args.bytes or args.chars or args.lines or args.words or getattr(args, "max_line_length", False)):
@@ -241,13 +290,16 @@ class WC:
 
             except KeyboardInterrupt:
                 raise
-            except Exception as e:
-                self.handle_error(e, filename)
+            except OSError as e:
+                self.handle_read_error(e, filename)
 
         # Print totals if needed
         self.print_totals()
 
         return self.exit_code
+
+    def handle_read_error(self, error, filename):
+        self.handle_error(error, filename)
 
     def update_totals(self):
         """Update total counts from current file counts."""

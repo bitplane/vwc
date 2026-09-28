@@ -1,4 +1,5 @@
 FROM alpine:latest
+ENTRYPOINT []
 
 # Install dependencies
 RUN apk add --no-cache \
