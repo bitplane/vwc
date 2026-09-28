@@ -7,29 +7,42 @@ on:
     branches: [master, "codex/**"]
 
 jobs:
-  bsd-vm-reference:
+  freebsd-reference:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - system: freebsd
-            package-command: pkg install -y python311 py311-pip
-            python: python3.11
-          - system: openbsd
-            package-command: pkg_add python%3.11 py3-pip
-            python: python3.11
-          - system: netbsd
-            package-command: /usr/sbin/pkg_add -u python311 py311-pip
-            python: python3.11
     steps:
       - uses: actions/checkout@v3
-      - name: Compare with native ${{ matrix.system }} wc
-        uses: vmactions/${{ matrix.system }}-vm@v1
+      - name: Compare with FreeBSD wc
+        uses: vmactions/freebsd-vm@v1
         with:
-          prepare: ${{ matrix.package-command }}
+          prepare: pkg install -y python311 py311-pip
           run: |
-            ${{ matrix.python }} -m venv /tmp/vwc-venv
+            python3.11 -m venv /tmp/vwc-venv
+            /tmp/vwc-venv/bin/python -m pip install -e . pytest
+            /tmp/vwc-venv/bin/python -m pytest -q -x tests/test_local_reference.py
+
+  openbsd-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compare with OpenBSD wc
+        uses: vmactions/openbsd-vm@v1
+        with:
+          prepare: pkg_add python%3.11 py3-pip
+          run: |
+            python3.11 -m venv /tmp/vwc-venv
+            /tmp/vwc-venv/bin/python -m pip install -e . pytest
+            /tmp/vwc-venv/bin/python -m pytest -q -x tests/test_local_reference.py
+
+  netbsd-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compare with NetBSD wc
+        uses: vmactions/netbsd-vm@v1
+        with:
+          prepare: /usr/sbin/pkg_add -u python311 py311-pip
+          run: |
+            python3.11 -m venv /tmp/vwc-venv
             /tmp/vwc-venv/bin/python -m pip install -e . pytest
             /tmp/vwc-venv/bin/python -m pytest -q -x tests/test_local_reference.py
 
