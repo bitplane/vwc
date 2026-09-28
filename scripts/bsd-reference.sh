@@ -27,7 +27,7 @@ else
     exit 1
 fi
 
-if /tmp/vwc-venv/bin/python -m pytest -q -x --tb=short tests/test_local_reference.py > /tmp/vwc-tests.log 2>&1; then
+if /tmp/vwc-venv/bin/python -m pytest -q --tb=line tests/test_local_reference.py > /tmp/vwc-tests.log 2>&1; then
     cat /tmp/vwc-tests.log
 else
     cat /tmp/vwc-tests.log

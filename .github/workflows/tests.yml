@@ -25,7 +25,7 @@ jobs:
         uses: vmactions/openbsd-vm@v1
         with:
           run: |
-            sh scripts/bsd-reference.sh /usr/local/bin/python3.11 pkg_add python%3.11 py3-pip
+            sh scripts/bsd-reference.sh /usr/local/bin/python3.13 pkg_add python%3.13 py3-pip
 
   netbsd-reference:
     runs-on: ubuntu-latest
