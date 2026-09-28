@@ -110,7 +110,7 @@ class NetBSD(BSD):
     """NetBSD wc reports malformed multibyte input and prints failed reads."""
 
     def process_file(self, filename, file_obj):
-        self.current_filename = filename or ""
+        self.current_filename = filename or "<stdin>"
         WC.process_file(self, filename, file_obj)
 
     def process_line(self, line):
