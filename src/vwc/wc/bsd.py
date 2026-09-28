@@ -114,7 +114,9 @@ class NetBSD(BSD):
         WC.process_file(self, filename, file_obj)
 
     def process_line(self, line):
-        if self.args.words or self.args.chars or self.args.max_line_length:
+        if (self.args.words or self.args.chars or self.args.max_line_length) and codecs.lookup(
+            self.encoding
+        ).name != "ascii":
             decoded = line.decode(self.encoding, errors="surrogateescape")
             invalid = sum(0xDC80 <= ord(char) <= 0xDCFF for char in decoded)
             if invalid:
@@ -135,14 +137,20 @@ class NetBSD(BSD):
         WC.process_line(self, line)
 
     def count_chars(self, line, text):
+        if codecs.lookup(self.encoding).name == "ascii":
+            return len(line)
         return sum(not 0xDC80 <= ord(char) <= 0xDCFF for char in text)
 
     def count_words(self, line, text):
+        if codecs.lookup(self.encoding).name == "ascii":
+            return len(line.split())
         return len("".join(char for char in text if not 0xDC80 <= ord(char) <= 0xDCFF).split())
 
     def line_width(self, line, text):
         if not line.endswith(b"\n"):
             return 0
+        if codecs.lookup(self.encoding).name == "ascii":
+            return len(line.removesuffix(b"\n"))
         return sum(not 0xDC80 <= ord(char) <= 0xDCFF for char in text.removesuffix("\n"))
 
     def handle_error(self, error, filename):

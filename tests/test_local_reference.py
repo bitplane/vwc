@@ -60,6 +60,27 @@ def test_bsd_c_locale_invalid_bytes(flag):
     )
 
 
+@pytest.mark.skipif(sys.platform.startswith("linux"), reason="BSD locale comparison")
+@pytest.mark.parametrize("data", [b"a\xc2\xa0b\n", b"a\xff b\n"])
+@pytest.mark.parametrize("flag", ["-w", "-m", "-L"])
+def test_bsd_utf8_locale(data, flag):
+    if sys.platform.startswith("openbsd") and flag == "-L":
+        pytest.skip("OpenBSD wc does not support -L")
+    available = subprocess.run(["locale", "-a"], capture_output=True, check=True).stdout.decode().splitlines()
+    locale_name = next((name for name in available if "utf" in name.lower() and "8" in name), None)
+    if locale_name is None:
+        pytest.skip("host has no UTF-8 locale")
+    env = os.environ.copy()
+    env["LC_ALL"] = locale_name
+    reference = subprocess.run(["wc", flag], input=data, capture_output=True, check=False, env=env)
+    actual = subprocess.run([*VWC, flag], input=data, capture_output=True, check=False, env=env)
+    assert (actual.returncode, actual.stdout, actual.stderr.replace(b"main.py:", b"wc:")) == (
+        reference.returncode,
+        reference.stdout,
+        reference.stderr,
+    )
+
+
 @pytest.mark.skipif(not HOST_IS_GNU, reason="host wc is not GNU coreutils")
 @pytest.mark.parametrize("locale_name", ["C", "C.UTF-8"])
 def test_gnu_invalid_byte_word_count_follows_installed_version(locale_name):
