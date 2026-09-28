@@ -35,12 +35,29 @@ HOST_IS_GNU = subprocess.run(["wc", "--version"], capture_output=True, check=Fal
 def test_host_counting(data, flag):
     if sys.platform.startswith("openbsd") and flag == "-L":
         pytest.skip("OpenBSD wc does not support -L")
-    if data == b"\xc3\xa9\xff\n" and flag == "-m" and not HOST_IS_GNU:
+    if data == b"\xc3\xa9\xff\n" and flag == "-m" and not HOST_IS_GNU and not sys.platform.startswith("netbsd"):
         pytest.skip("host wc uses different invalid-byte character counting")
     operands = [] if sys.platform.startswith(("darwin", "freebsd", "openbsd", "netbsd")) else ["-"]
     reference = subprocess.run(["wc", flag, *operands], input=data, capture_output=True, check=False)
     actual = subprocess.run([*VWC, flag, *operands], input=data, capture_output=True, check=False)
     assert (actual.returncode, actual.stdout) == (reference.returncode, reference.stdout)
+
+
+@pytest.mark.skipif(sys.platform.startswith("linux"), reason="BSD locale comparison")
+@pytest.mark.parametrize("flag", ["-w", "-m", "-L"])
+def test_bsd_c_locale_invalid_bytes(flag):
+    if sys.platform.startswith("openbsd") and flag == "-L":
+        pytest.skip("OpenBSD wc does not support -L")
+    env = os.environ.copy()
+    env["LC_ALL"] = "C"
+    data = b"a\xff b\n"
+    reference = subprocess.run(["wc", flag], input=data, capture_output=True, check=False, env=env)
+    actual = subprocess.run([*VWC, flag], input=data, capture_output=True, check=False, env=env)
+    assert (actual.returncode, actual.stdout, actual.stderr.replace(b"main.py:", b"wc:")) == (
+        reference.returncode,
+        reference.stdout,
+        reference.stderr,
+    )
 
 
 @pytest.mark.skipif(not HOST_IS_GNU, reason="host wc is not GNU coreutils")

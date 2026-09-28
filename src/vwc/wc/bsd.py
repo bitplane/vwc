@@ -109,23 +109,32 @@ class BSD(WC):
 class NetBSD(BSD):
     """NetBSD wc reports malformed multibyte input and prints failed reads."""
 
+    def process_file(self, filename, file_obj):
+        self.current_filename = filename or ""
+        WC.process_file(self, filename, file_obj)
+
     def process_line(self, line):
-        if (self.args.words or self.args.chars or self.args.max_line_length) and codecs.lookup(
-            self.encoding
-        ).name != "ascii":
+        if self.args.words or self.args.chars or self.args.max_line_length:
             decoded = line.decode(self.encoding, errors="surrogateescape")
             invalid = sum(0xDC80 <= ord(char) <= 0xDCFF for char in decoded)
             if invalid:
                 exe = os.path.basename(sys.argv[0])
                 filename = getattr(self, "current_filename", "")
-                for _ in range(invalid):
-                    sys.stderr.write(f"{exe}: {filename}: invalid byte sequence\n")
-                self.set_status(1)
+                try:
+                    line.decode(self.encoding)
+                except UnicodeDecodeError as error:
+                    incomplete = error.reason == "unexpected end of data" and not line.endswith(b"\n")
+                    if incomplete:
+                        if self.args.chars:
+                            sys.stderr.write(f"{exe}: {filename}: incomplete multibyte character\n")
+                            self.set_status(1)
+                    else:
+                        for _ in range(invalid):
+                            sys.stderr.write(f"{exe}: {filename}: invalid byte sequence\n")
+                        self.set_status(1)
         WC.process_line(self, line)
 
     def count_chars(self, line, text):
-        if codecs.lookup(self.encoding).name == "ascii":
-            return len(line)
         return sum(not 0xDC80 <= ord(char) <= 0xDCFF for char in text)
 
     def count_words(self, line, text):
