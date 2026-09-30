@@ -333,7 +333,7 @@ class WC:
         last_update = time.time()
 
         # Process file line by line
-        for line in file_obj:
+        for line in self.input_lines(file_obj):
             # Process the line and update state
             self.process_line(line)
 
@@ -351,6 +351,27 @@ class WC:
         # Close file if not stdin
         if filename and file_obj != sys.stdin.buffer:
             file_obj.close()
+
+    @staticmethod
+    def input_lines(file_obj):
+        if not file_obj.isatty() or not hasattr(file_obj, "read1"):
+            yield from file_obj
+            return
+
+        # readline can consume a terminal EOF while returning a partial line,
+        # then wait for another EOF on its next call. read1 exposes the empty
+        # read directly, so a final partial line is emitted without reading again.
+        pending = bytearray()
+        while chunk := file_obj.read1(64 * 1024):
+            pending.extend(chunk)
+            start = 0
+            while (end := pending.find(b"\n", start)) != -1:
+                yield bytes(pending[start : end + 1])
+                start = end + 1
+            if start:
+                del pending[:start]
+        if pending:
+            yield bytes(pending)
 
     def accelerated_word_mode(self):
         """Return the byte word rule, or None when word counting needs the line path."""

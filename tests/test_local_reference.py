@@ -5,9 +5,11 @@ covered by the container integration suite instead.
 """
 
 import os
+import select
 import shutil
 import subprocess
 import sys
+import termios
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,68 @@ HOST_HAS_GNU_OPTIONS = b"--files0-from" in subprocess.run(["wc", "--help"], capt
 HOST_IS_GNU = subprocess.run(["wc", "--version"], capture_output=True, check=False).stdout.startswith(
     b"wc (GNU coreutils)"
 )
+
+
+def terminal_eof_result(command, env, scenario):
+    master, slave = os.openpty()
+    settings = termios.tcgetattr(slave)
+    settings[3] = (settings[3] | termios.ICANON) & ~termios.ECHO
+    settings[6][termios.VEOF] = b"\x04"
+    termios.tcsetattr(slave, termios.TCSANOW, settings)
+    process = subprocess.Popen(command, stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    os.close(slave)
+    try:
+        if scenario == "empty":
+            os.write(master, b"\x04")
+        elif scenario == "newline":
+            os.write(master, b"one two\n\x04")
+        else:
+            os.write(master, b"one two\x04")
+            # EOF after text delivers the pending text, rather than ending stdin.
+            assert not select.select([process.stdout], [], [], 0.15)[0], "exited after a partial-line Ctrl+D"
+            assert process.poll() is None
+            if scenario == "continue":
+                os.write(master, b"more\n")
+            os.write(master, b"\x04")
+        stdout, stderr = process.communicate(timeout=5)
+        return process.returncode, stdout, stderr
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+        os.close(master)
+
+
+@pytest.mark.parametrize("reference", ["host", "busybox"])
+@pytest.mark.parametrize("scenario", ["empty", "newline", "partial", "continue"])
+@pytest.mark.parametrize("flag", ["default", "fallback", "-m", "-L"])
+def test_interactive_ctrl_d_matches_native_wc(tmp_path, reference, scenario, flag):
+    env = os.environ.copy()
+    if reference == "busybox":
+        executable = shutil.which("busybox")
+        if executable is None or not sys.platform.startswith("linux"):
+            pytest.skip("BusyBox platform selection requires Linux and BusyBox")
+        (tmp_path / "wc").symlink_to(executable)
+        env["PATH"] = f"{tmp_path}{os.pathsep}{env['PATH']}"
+        native = [executable, "wc"]
+    else:
+        if flag == "-L" and sys.platform.startswith("openbsd"):
+            pytest.skip("OpenBSD wc does not support -L")
+        native = [shutil.which("gnuwc") or shutil.which("wc")]
+    actual = VWC
+    if flag == "fallback":
+        actual = [
+            sys.executable,
+            "-c",
+            (
+                "from vwc.wc.wc import WC; WC.use_accelerated_scan = lambda self, source: False; "
+                "from vwc.main import main; raise SystemExit(main())"
+            ),
+        ]
+    options = [] if flag in ("default", "fallback") else [flag]
+    expected = terminal_eof_result([*native, *options], env, scenario)
+    observed = terminal_eof_result([*actual, *options], env, scenario)
+    assert observed == expected
 
 
 @pytest.mark.parametrize(
